@@ -167,8 +167,8 @@ relocations pointing at RAM.
 Each Tock application begins with a header that is today defined as:
 
 ```rust
-struct LoadInfo {
-    version: u32,            // Version of the Tock Binary Format (currently 1)
+struct TbfHeader {
+    version: u32,            // Version of the Tock Binary Format (currently 2)
     total_size: u32,         // Total padded size of the program image in bytes
     entry_offset: u32,       // The function to call to start the application
     rel_data_offset: u32,    // Offset in memory to start of relocation data
@@ -186,16 +186,36 @@ struct LoadInfo {
     min_kernel_heap_len: u32 // Minimum size for kernel's borrow heap
     pkg_name_offset: u32,    // Offset in memory to a string with package name
     pkg_name_size: u32,      // Length of package name in bytes
+    flags: u32,              // Various flags associated with the application
     checksum: u32,           // XOR of all previous fields
 }
 ```
+
+Flags:
+
+```
+   3                   2                   1                   0
+ 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Reserved                                                  |S|E|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+- `E`: Enabled/disabled bit. When set to `1` the application will be started
+on boot. When `0` the kernel will not start the application. Defaults to `1`
+when set by `elf2tbf`.
+- 'S': Sticky bit. When set to `1`, Tockloader will not remove the app without
+a `--force` flag. This allows for "system" apps that can be added for debugging
+purposes and are not removed during normal testing/application development.
+The sticky bit also enables "library" applications (e.g. a radio stack) to
+be persistent even when other apps are being developed.
 
 In practice, this is automatically handled for applications. As part of the
 compilation process, a tool called
 [Elf to Tock Binary Format](https://github.com/helena-project/tock/tree/master/userland/tools/elf2tbf)
 does the conversion from ELF to Tock's expected binary format, ensuring that
 sections are placed in the expected order, adding a section that lists
-necessary load-time relocations, and creating the `LoadInfo` header.
+necessary load-time relocations, and creating the TBF header.
 
 
 ### Tock Application Bundle

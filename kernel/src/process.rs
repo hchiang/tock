@@ -100,7 +100,7 @@ pub struct FunctionCall {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-struct LoadInfo {
+struct TbfHeaderBase {
     version: u32,
     total_size: u32,
     entry_offset: u32,
@@ -119,36 +119,106 @@ struct LoadInfo {
     min_kernel_heap_len: u32,
     pkg_name_offset: u32,
     pkg_name_size: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct TbfHeaderV1 {
+    base: TbfHeaderBase,
     checksum: u32,
 }
 
-/// Converts a pointer to memory to a LoadInfo struct
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct TbfHeaderV2 {
+    base: TbfHeaderBase,
+    flags: u32,
+    checksum: u32,
+}
+
+/// Type that represents the fields of the Tock Binary Format header.
+/// This specifies the locations of the different code and memory sections
+/// in the tock binary, as well as other information about the application.
+/// The kernel can also use this header to keep persistent state about
+/// the application.
+enum TbfHeader {
+    TbfHeaderV1(&'static TbfHeaderV1),
+    TbfHeaderV2(&'static TbfHeaderV2),
+}
+
+impl TbfHeader {
+    /// Get a reference to the fields of the header that are common to all
+    /// of the TBF header versions.
+    fn base(&self) -> &TbfHeaderBase {
+        match *self {
+            TbfHeader::TbfHeaderV1(hd) => &hd.base,
+            TbfHeader::TbfHeaderV2(hd) => &hd.base,
+        }
+    }
+
+    /// Return whether the application is enabled or not.
+    /// Disabled applications are not started by the kernel.
+    fn enabled(&self) -> bool {
+        match *self {
+            // Header v1 has no flag for this, and therefore all apps are
+            // always enabled.
+            TbfHeader::TbfHeaderV1(_) => true,
+            TbfHeader::TbfHeaderV2(hd) => {
+                // Bit 0 of flags is the enable/disable bit.
+                hd.flags & 0x00000001 == 1
+            }
+        }
+    }
+}
+
+/// Converts a pointer to memory to a TbfHeader struct
 ///
-/// This function takes a pointer to arbitrary memory and Optionally returns a
-/// LoadInfo struct. This function will validate the header checksum, but does
-/// not perform sanity or security checking on the structure
-unsafe fn parse_and_validate_load_info(address: *const u8) -> Option<&'static LoadInfo> {
-    let load_info = &*(address as *const LoadInfo);
+/// This function takes a pointer to arbitrary memory and optionally returns a
+/// TBF header struct. This function will validate the header checksum, but does
+/// not perform sanity or security checking on the structure.
+unsafe fn parse_and_validate_tbf_header(address: *const u8) -> Option<TbfHeader> {
+    let version = *(address as *const u32);
 
-    if load_info.version != 1 {
-        return None;
+    match version {
+        1 => {
+            let tbf_header = &*(address as *const TbfHeaderV1);
+
+            let checksum =
+                tbf_header.base.version             ^ tbf_header.base.total_size      ^ tbf_header.base.entry_offset ^
+                tbf_header.base.rel_data_offset     ^ tbf_header.base.rel_data_size   ^ tbf_header.base.text_offset ^
+                tbf_header.base.text_size           ^ tbf_header.base.got_offset      ^ tbf_header.base.got_size ^
+                tbf_header.base.data_offset         ^ tbf_header.base.data_size       ^ tbf_header.base.bss_mem_offset ^
+                tbf_header.base.bss_size            ^ tbf_header.base.min_stack_len   ^ tbf_header.base.min_app_heap_len ^
+                tbf_header.base.min_kernel_heap_len ^ tbf_header.base.pkg_name_offset ^ tbf_header.base.pkg_name_size;
+
+            if checksum != tbf_header.checksum {
+                None
+            } else {
+                Some(TbfHeader::TbfHeaderV1(tbf_header))
+            }
+        }
+
+        2 => {
+            let tbf_header = &*(address as *const TbfHeaderV2);
+
+            let checksum =
+                tbf_header.base.version             ^ tbf_header.base.total_size      ^ tbf_header.base.entry_offset ^
+                tbf_header.base.rel_data_offset     ^ tbf_header.base.rel_data_size   ^ tbf_header.base.text_offset ^
+                tbf_header.base.text_size           ^ tbf_header.base.got_offset      ^ tbf_header.base.got_size ^
+                tbf_header.base.data_offset         ^ tbf_header.base.data_size       ^ tbf_header.base.bss_mem_offset ^
+                tbf_header.base.bss_size            ^ tbf_header.base.min_stack_len   ^ tbf_header.base.min_app_heap_len ^
+                tbf_header.base.min_kernel_heap_len ^ tbf_header.base.pkg_name_offset ^ tbf_header.base.pkg_name_size ^
+                tbf_header.flags;
+
+            if checksum != tbf_header.checksum {
+                None
+            } else {
+                Some(TbfHeader::TbfHeaderV2(tbf_header))
+            }
+        }
+
+        _ => None
     }
-
-    let checksum =
-        load_info.version ^ load_info.total_size ^ load_info.entry_offset ^
-        load_info.rel_data_offset ^ load_info.rel_data_size ^ load_info.text_offset ^
-        load_info.text_size ^ load_info.got_offset ^
-        load_info.got_size ^
-        load_info.data_offset ^ load_info.data_size ^ load_info.bss_mem_offset ^
-        load_info.bss_size ^
-        load_info.min_stack_len ^ load_info.min_app_heap_len ^
-        load_info.min_kernel_heap_len ^ load_info.pkg_name_offset ^ load_info.pkg_name_size;
-
-    if checksum != load_info.checksum {
-        return None;
-    }
-
-    Some(load_info)
 }
 
 #[derive(Default)]
@@ -429,113 +499,118 @@ impl<'a> Process<'a> {
                          remaining_app_memory_size: usize,
                          fault_response: FaultResponse)
                          -> (Option<Process<'a>>, usize, usize) {
-        if let Some(load_info) = parse_and_validate_load_info(app_flash_address) {
-            let app_flash_size = load_info.total_size as usize;
+        if let Some(tbf_header) = parse_and_validate_tbf_header(app_flash_address) {
+            let app_flash_size = tbf_header.base().total_size as usize;
+            let app_heap_len = align8!(tbf_header.base().min_app_heap_len);
+            let kernel_heap_len = align8!(tbf_header.base().min_kernel_heap_len);
 
-            // Load the process into memory
-            if let Some(load_result) =
-                load(load_info,
-                     app_flash_address,
-                     remaining_app_memory,
-                     remaining_app_memory_size) {
-                let app_heap_len = align8!(load_info.min_app_heap_len);
-                let kernel_heap_len = align8!(load_info.min_kernel_heap_len);
+            // Check if this process is enabled. This is set in a flag in the
+            // TBF header. If it isn't enabled, we can just stop here.
+            if tbf_header.enabled() {
 
-                let app_slice_size_unaligned = load_result.fixed_len + app_heap_len +
-                                               kernel_heap_len;
-                let app_slice_size = math::closest_power_of_two(app_slice_size_unaligned) as usize;
-                // TODO round app_slice_size up to a closer MPU unit.
-                // This is a very conservative approach that rounds up to power of
-                // two. We should be able to make this closer to what we actually need.
+                // Load the process into memory
+                if let Some(load_result) =
+                    load(tbf_header,
+                         app_flash_address,
+                         remaining_app_memory,
+                         remaining_app_memory_size) {
 
-                if app_slice_size > remaining_app_memory_size {
-                    panic!("{:?} failed to load. Insufficient memory. Requested {} have {}",
-                           load_result.package_name,
-                           app_slice_size,
-                           remaining_app_memory_size);
+                    let app_slice_size_unaligned = load_result.fixed_len + app_heap_len +
+                                                   kernel_heap_len;
+                    let app_slice_size = math::closest_power_of_two(app_slice_size_unaligned) as usize;
+                    // TODO round app_slice_size up to a closer MPU unit.
+                    // This is a very conservative approach that rounds up to power of
+                    // two. We should be able to make this closer to what we actually need.
+
+                    if app_slice_size > remaining_app_memory_size {
+                        panic!("{:?} failed to load. Insufficient memory. Requested {} have {}",
+                               load_result.package_name,
+                               app_slice_size,
+                               remaining_app_memory_size);
+                    }
+
+                    let app_memory = slice::from_raw_parts_mut(remaining_app_memory, app_slice_size);
+
+                    // Set up initial grant region
+                    let mut kernel_memory_break = app_memory.as_mut_ptr()
+                        .offset(app_memory.len() as isize);
+
+                    // make room for container pointers
+                    let pointer_size = mem::size_of::<*const usize>();
+                    let num_ctrs = read_volatile(&container::CONTAINER_COUNTER);
+                    let container_ptrs_size = num_ctrs * pointer_size;
+                    kernel_memory_break = kernel_memory_break.offset(-(container_ptrs_size as isize));
+
+                    // set all pointers to null
+                    let opts = slice::from_raw_parts_mut(kernel_memory_break as *mut *const usize,
+                                                         num_ctrs);
+                    for opt in opts.iter_mut() {
+                        *opt = ptr::null()
+                    }
+
+                    // Allocate memory for callback ring buffer
+                    let callback_size = mem::size_of::<Task>();
+                    let callback_len = 10;
+                    let callback_offset = callback_len * callback_size;
+                    kernel_memory_break = kernel_memory_break.offset(-(callback_offset as isize));
+
+                    // Set up ring buffer
+                    let callback_buf = slice::from_raw_parts_mut(kernel_memory_break as *mut Task,
+                                                                 callback_len);
+                    let tasks = RingBuffer::new(callback_buf);
+
+                    let mut process = Process {
+                        memory: app_memory,
+
+                        kernel_memory_break: kernel_memory_break,
+                        app_heap_break: load_result.app_heap_start,
+                        app_heap_start: load_result.app_heap_start,
+                        stack_data_boundary: load_result.stack_data_boundary,
+                        cur_stack: load_result.stack_data_boundary,
+
+                        min_stack_pointer: load_result.stack_data_boundary,
+
+                        syscall_count: Cell::new(0),
+                        last_syscall: Cell::new(None),
+
+                        text: slice::from_raw_parts(app_flash_address, app_flash_size),
+
+                        stored_regs: Default::default(),
+                        yield_pc: load_result.init_fn,
+                        // Set the Thumb bit and clear everything else
+                        psr: 0x01000000,
+
+                        state: State::Yielded,
+                        fault_response: fault_response,
+
+                        mpu_regions: [Cell::new((ptr::null(), math::PowerOfTwo::zero())),
+                                      Cell::new((ptr::null(), math::PowerOfTwo::zero())),
+                                      Cell::new((ptr::null(), math::PowerOfTwo::zero())),
+                                      Cell::new((ptr::null(), math::PowerOfTwo::zero())),
+                                      Cell::new((ptr::null(), math::PowerOfTwo::zero()))],
+                        tasks: tasks,
+                        package_name: load_result.package_name,
+                    };
+
+                    if (load_result.init_fn & 0x1) != 1 {
+                        panic!("{:?} process image invalid. \
+                               init_fn address must end in 1 to be Thumb, got {:#X}",
+                               load_result.package_name,
+                               load_result.init_fn);
+                    }
+
+                    process.tasks.enqueue(Task::FunctionCall(FunctionCall {
+                        pc: load_result.init_fn,
+                        r0: process.memory.as_ptr() as usize,
+                        r1: process.app_heap_break as usize,
+                        r2: process.kernel_memory_break as usize,
+                        r3: 0,
+                    }));
+
+                    HAVE_WORK.set(HAVE_WORK.get() + 1);
+
+                    return (Some(process), app_flash_size, app_slice_size);
                 }
-
-                let app_memory = slice::from_raw_parts_mut(remaining_app_memory, app_slice_size);
-
-                // Set up initial grant region
-                let mut kernel_memory_break = app_memory.as_mut_ptr()
-                    .offset(app_memory.len() as isize);
-
-                // make room for container pointers
-                let pointer_size = mem::size_of::<*const usize>();
-                let num_ctrs = read_volatile(&container::CONTAINER_COUNTER);
-                let container_ptrs_size = num_ctrs * pointer_size;
-                kernel_memory_break = kernel_memory_break.offset(-(container_ptrs_size as isize));
-
-                // set all pointers to null
-                let opts = slice::from_raw_parts_mut(kernel_memory_break as *mut *const usize,
-                                                     num_ctrs);
-                for opt in opts.iter_mut() {
-                    *opt = ptr::null()
-                }
-
-                // Allocate memory for callback ring buffer
-                let callback_size = mem::size_of::<Task>();
-                let callback_len = 10;
-                let callback_offset = callback_len * callback_size;
-                kernel_memory_break = kernel_memory_break.offset(-(callback_offset as isize));
-
-                // Set up ring buffer
-                let callback_buf = slice::from_raw_parts_mut(kernel_memory_break as *mut Task,
-                                                             callback_len);
-                let tasks = RingBuffer::new(callback_buf);
-
-                let mut process = Process {
-                    memory: app_memory,
-
-                    kernel_memory_break: kernel_memory_break,
-                    app_heap_break: load_result.app_heap_start,
-                    app_heap_start: load_result.app_heap_start,
-                    stack_data_boundary: load_result.stack_data_boundary,
-                    cur_stack: load_result.stack_data_boundary,
-
-                    min_stack_pointer: load_result.stack_data_boundary,
-
-                    syscall_count: Cell::new(0),
-                    last_syscall: Cell::new(None),
-
-                    text: slice::from_raw_parts(app_flash_address, app_flash_size),
-
-                    stored_regs: Default::default(),
-                    yield_pc: load_result.init_fn,
-                    // Set the Thumb bit and clear everything else
-                    psr: 0x01000000,
-
-                    state: State::Yielded,
-                    fault_response: fault_response,
-
-                    mpu_regions: [Cell::new((ptr::null(), math::PowerOfTwo::zero())),
-                                  Cell::new((ptr::null(), math::PowerOfTwo::zero())),
-                                  Cell::new((ptr::null(), math::PowerOfTwo::zero())),
-                                  Cell::new((ptr::null(), math::PowerOfTwo::zero())),
-                                  Cell::new((ptr::null(), math::PowerOfTwo::zero()))],
-                    tasks: tasks,
-                    package_name: load_result.package_name,
-                };
-
-                if (load_result.init_fn & 0x1) != 1 {
-                    panic!("{:?} process image invalid. \
-                           init_fn address must end in 1 to be Thumb, got {:#X}",
-                           load_result.package_name,
-                           load_result.init_fn);
-                }
-
-                process.tasks.enqueue(Task::FunctionCall(FunctionCall {
-                    pc: load_result.init_fn,
-                    r0: process.memory.as_ptr() as usize,
-                    r1: process.app_heap_break as usize,
-                    r2: process.kernel_memory_break as usize,
-                    r3: 0,
-                }));
-
-                HAVE_WORK.set(HAVE_WORK.get() + 1);
-
-                return (Some(process), app_flash_size, app_slice_size);
             }
         }
         (None, 0, 0)
@@ -888,24 +963,23 @@ impl<'a> Process<'a> {
 
     pub unsafe fn statistics_str<W: Write>(&mut self, writer: &mut W) {
 
-        if let Some(load_info) = parse_and_validate_load_info(self.text.as_ptr()) {
-            // Flash addresses
+        if let Some(tbf_header) = parse_and_validate_tbf_header(self.text.as_ptr()) {
             let flash_end = self.text.as_ptr().offset(self.text.len() as isize) as usize;
             let flash_data_end = self.text
                 .as_ptr()
-                .offset(load_info.pkg_name_offset as isize + load_info.pkg_name_size as isize) as
+                .offset(tbf_header.base().pkg_name_offset as isize + tbf_header.base().pkg_name_size as isize) as
                                  usize;
-            let flash_data_start = self.text.as_ptr().offset(load_info.got_offset as isize) as
+            let flash_data_start = self.text.as_ptr().offset(tbf_header.base().got_offset as isize) as
                                    usize;
-            let flash_text_start = self.text.as_ptr().offset(load_info.text_offset as isize) as
+            let flash_text_start = self.text.as_ptr().offset(tbf_header.base().text_offset as isize) as
                                    usize;
             let flash_start = self.text.as_ptr() as usize;
 
             // Flash sizes
-            let flash_data_size = load_info.got_size + load_info.data_size +
-                                  load_info.pkg_name_size;
-            let flash_text_size = load_info.text_size;
-            let flash_header_size = mem::size_of::<LoadInfo>() + load_info.rel_data_size as usize;
+            let flash_data_size = tbf_header.base().got_size + tbf_header.base().data_size +
+                                  tbf_header.base().pkg_name_size;
+            let flash_text_size = tbf_header.base().text_size;
+            let flash_header_size = tbf_header.base().rel_data_offset + tbf_header.base().rel_data_size;
 
             // SRAM addresses
             let sram_end = self.memory.as_ptr().offset(self.memory.len() as isize) as usize;
@@ -921,9 +995,9 @@ impl<'a> Process<'a> {
             let sram_heap_size = sram_heap_end - sram_heap_start;
             let sram_data_size = sram_heap_start - sram_stack_data_boundary;
             let sram_stack_size = sram_stack_data_boundary - sram_stack_bottom;
-            let sram_grant_allocated = load_info.min_kernel_heap_len as usize;
-            let sram_heap_allocated = load_info.min_app_heap_len as usize;
-            let sram_stack_allocated = load_info.min_stack_len as usize;
+            let sram_grant_allocated = tbf_header.base().min_kernel_heap_len as usize;
+            let sram_heap_allocated = tbf_header.base().min_app_heap_len as usize;
+            let sram_stack_allocated = tbf_header.base().min_stack_len as usize;
             let sram_data_allocated = sram_data_size as usize;
 
             // checking on sram
@@ -1120,14 +1194,14 @@ struct LoadResult {
 ///
 /// The function returns a `LoadResult` containing metadata about the loaded
 /// process or None if loading failed.
-unsafe fn load(load_info: &'static LoadInfo,
+unsafe fn load(tbf_header: TbfHeader,
                flash_start_addr: *const u8,
                mem_base: *mut u8,
                mem_size: usize)
                -> Option<LoadResult> {
     let package_name_byte_array =
-        slice::from_raw_parts(flash_start_addr.offset(load_info.pkg_name_offset as isize),
-                              load_info.pkg_name_size as usize);
+        slice::from_raw_parts(flash_start_addr.offset(tbf_header.base().pkg_name_offset as isize),
+                              tbf_header.base().pkg_name_size as usize);
     let mut app_name_str = "";
     let _ = str::from_utf8(package_name_byte_array).map(|name_str| { app_name_str = name_str; });
 
@@ -1139,33 +1213,33 @@ unsafe fn load(load_info: &'static LoadInfo,
         package_name: app_name_str,
     };
 
-    let text_start = flash_start_addr.offset(load_info.text_offset as isize);
+    let text_start = flash_start_addr.offset(tbf_header.base().text_offset as isize);
 
     let rel_data: &[u32] =
-        slice::from_raw_parts(flash_start_addr.offset(load_info.rel_data_offset as isize) as
+        slice::from_raw_parts(flash_start_addr.offset(tbf_header.base().rel_data_offset as isize) as
                               *const u32,
-                              (load_info.rel_data_size as usize) / mem::size_of::<u32>());
+                              (tbf_header.base().rel_data_size as usize) / mem::size_of::<u32>());
 
-    let aligned_stack_len = align8!(load_info.min_stack_len);
+    let aligned_stack_len = align8!(tbf_header.base().min_stack_len);
 
     let got: &[u8] =
-        slice::from_raw_parts(flash_start_addr.offset(load_info.got_offset as isize),
-                              load_info.got_size as usize) as &[u8];
+        slice::from_raw_parts(flash_start_addr.offset(tbf_header.base().got_offset as isize),
+                              tbf_header.base().got_size as usize) as &[u8];
 
     let data: &[u8] =
-        slice::from_raw_parts(flash_start_addr.offset(load_info.data_offset as isize),
-                              load_info.data_size as usize);
+        slice::from_raw_parts(flash_start_addr.offset(tbf_header.base().data_offset as isize),
+                              tbf_header.base().data_size as usize);
 
     let got_base = mem_base.offset(aligned_stack_len as isize);
     let got_andthen_data: &mut [u8] =
         slice::from_raw_parts_mut(got_base,
-                                  (load_info.got_size + load_info.data_size) as usize);
+                                  (tbf_header.base().got_size + tbf_header.base().data_size) as usize);
 
-    let bss = mem_base.offset(aligned_stack_len as isize + load_info.bss_mem_offset as isize);
+    let bss = mem_base.offset(aligned_stack_len as isize + tbf_header.base().bss_mem_offset as isize);
 
     // Total size of fixed segment
-    let aligned_fixed_len = align8!(aligned_stack_len + load_info.data_size + load_info.got_size +
-                                    load_info.bss_size);
+    let aligned_fixed_len = align8!(aligned_stack_len + tbf_header.base().data_size + tbf_header.base().got_size +
+                                    tbf_header.base().bss_size);
 
     // Verify target data fits in memory before writing anything
     if (aligned_fixed_len) > mem_size as u32 {
@@ -1184,7 +1258,7 @@ unsafe fn load(load_info: &'static LoadInfo,
     }
 
     // Zero out BSS
-    intrinsics::write_bytes(bss, 0, load_info.bss_size as usize);
+    intrinsics::write_bytes(bss, 0, tbf_header.base().bss_size as usize);
 
 
     // Helper function that fixes up GOT entries
@@ -1201,7 +1275,7 @@ unsafe fn load(load_info: &'static LoadInfo,
 
     // Fixup Global Offset Table
     let mem_got: &mut [u32] = slice::from_raw_parts_mut(got_base as *mut u32,
-                                                        (load_info.got_size as usize) /
+                                                        (tbf_header.base().got_size as usize) /
                                                         mem::size_of::<u32>());
 
     for got_cur in mem_got {
@@ -1217,7 +1291,7 @@ unsafe fn load(load_info: &'static LoadInfo,
     }
 
     // Entry point is offset from app code
-    load_result.init_fn = flash_start_addr.offset(load_info.entry_offset as isize) as usize;
+    load_result.init_fn = flash_start_addr.offset(tbf_header.base().entry_offset as isize) as usize;
 
     load_result.app_heap_start = mem_base.offset(aligned_fixed_len as isize);
     load_result.stack_data_boundary = mem_base.offset(aligned_stack_len as isize);
