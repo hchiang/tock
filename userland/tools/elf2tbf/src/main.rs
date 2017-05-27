@@ -15,7 +15,7 @@ use std::slice;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-struct LoadInfo {
+struct TbfHeader {
     version: u32,
     total_size: u32,
     entry_offset: u32,
@@ -34,10 +34,11 @@ struct LoadInfo {
     min_kernel_heap_len: u32,
     package_name_offset: u32,
     package_name_size: u32,
+    flags: u32,
     checksum: u32,
 }
 
-impl fmt::Display for LoadInfo {
+impl fmt::Display for TbfHeader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "
             version: {:>8} {:>#10X}
@@ -58,6 +59,7 @@ impl fmt::Display for LoadInfo {
 min_kernel_heap_len: {:>8} {:>#10X}
 package_name_offset: {:>8} {:>#10X}
   package_name_size: {:>8} {:>#10X}
+              flags: {:>8} {:>#10X}
            checksum: {:>8} {:>#10X}
 ",
         self.version, self.version,
@@ -78,6 +80,7 @@ package_name_offset: {:>8} {:>#10X}
         self.min_kernel_heap_len, self.min_kernel_heap_len,
         self.package_name_offset, self.package_name_offset,
         self.package_name_size, self.package_name_size,
+        self.flags, self.flags,
         self.checksum, self.checksum,
         )
     }
@@ -187,7 +190,7 @@ fn do_work(input: &elf::File,
     let app_heap_len = get_section(input, ".app_heap").data.len() as u32;
     let kernel_heap_len = get_section(input, ".kernel_heap").data.len() as u32;
 
-    let mut total_size = (mem::size_of::<LoadInfo>() + rel_data.len() + text.data.len() +
+    let mut total_size = (mem::size_of::<TbfHeader>() + rel_data.len() + text.data.len() +
                           got.data.len() +
                           data.data.len() + package_name.len()) as u32;
 
@@ -199,7 +202,7 @@ fn do_work(input: &elf::File,
     };
     total_size = total_size + pad;
 
-    let rel_data_offset = mem::size_of::<LoadInfo>() as u32;
+    let rel_data_offset = mem::size_of::<TbfHeader>() as u32;
     let text_offset = rel_data_offset + (rel_data_size as u32);
     let text_size = text.shdr.size as u32;
     let entry_offset = (input.ehdr.entry ^ 0x80000000) as u32 + text_offset;
@@ -210,10 +213,13 @@ fn do_work(input: &elf::File,
     let package_name_offset = data_offset + data_size;
     let package_name_size = package_name.len() as u32;
 
-    let load_info_version = 1;
+    // Flags default to app is enabled
+    let flags = 0x0000001;
 
-    let load_info = LoadInfo {
-        version: load_info_version,
+    let tbf_header_version = 2;
+
+    let tbf_header = TbfHeader {
+        version: tbf_header_version,
         total_size: total_size,
         entry_offset: entry_offset,
         rel_data_offset: rel_data_offset,
@@ -231,20 +237,22 @@ fn do_work(input: &elf::File,
         min_kernel_heap_len: kernel_heap_len,
         package_name_offset: package_name_offset,
         package_name_size: package_name_size,
-        checksum: load_info_version ^ total_size ^ entry_offset ^ rel_data_offset ^
+        flags: flags,
+        checksum: tbf_header_version ^ total_size ^ entry_offset ^ rel_data_offset ^
                   rel_data_size as u32 ^ text_offset ^ text_size ^ got_offset ^
                   got_size ^
                   data_offset ^ data_size ^ bss.shdr.addr as u32 ^
                   bss.shdr.size as u32 ^
                   stack_len ^ app_heap_len ^
-                  kernel_heap_len ^ package_name_offset ^ package_name_size,
+                  kernel_heap_len ^ package_name_offset ^ package_name_size ^
+                  flags,
     };
 
     if verbose {
-        print!("{}", load_info);
+        print!("{}", tbf_header);
     }
 
-    try!(output.write_all(unsafe { as_byte_slice(&load_info) }));
+    try!(output.write_all(unsafe { as_byte_slice(&tbf_header) }));
     try!(output.write_all(rel_data.as_ref()));
     try!(output.write_all(text.data.as_ref()));
     try!(output.write_all(got.data.as_ref()));
