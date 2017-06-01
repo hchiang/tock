@@ -16,6 +16,7 @@ use kernel::common::volatile_cell::VolatileCell;
 use kernel::hil;
 use kernel::returncode::ReturnCode;
 use pm::{self, Clock, PBAClock};
+use nvic;
 
 #[repr(C, packed)]
 pub struct DacRegisters {
@@ -51,6 +52,13 @@ impl Dac {
             enabled: Cell::new(false),
         }
     }
+
+    pub fn handle_interrupt(&mut self) {
+		//debug!("Interrupt!");
+		
+        let regs: &mut DacRegisters = unsafe { mem::transmute(self.registers) };
+		regs.cdr.set(0x567); 
+	}
 }
 
 impl hil::dac::DacChannel for Dac {
@@ -61,22 +69,36 @@ impl hil::dac::DacChannel for Dac {
             
             ///  Start the APB clock (CLK_DACC)
             unsafe {
-                pm::enable_clock(Clock::PBA(PBAClock::DACC));
+                pm::enable_clock(Clock::PBA(PBAClock::DACC));	
+                nvic::enable(nvic::NvicIdx::DACC);
             }
 			/// Reset DACC
 			regs.cr.set(1);
 
+            
+			debug!("ISR: {}", regs.isr.get());
+			
+			/// Enable the DAC
+            //let mut mr: u32 = regs.mr.get();
+            //mr |= 1 << 4;
+			debug!("ISR: {}", regs.isr.get());
+			
 
-            /// Enable the DAC
-            let mut mr: u32 = regs.mr.get();
 			debug!("Mode Reg Before: {}", regs.mr.get());
-
-            mr |= 1 << 4;
-            regs.mr.set(0x00000010);
+			regs.mr.set(0x02000010);
 			debug!("Mode Reg After: {}", regs.mr.get());
 
+			regs.ier.set(1);
+
+			debug!("ISR: {}", regs.isr.get());
+
 			/// Set DAC value
-			regs.cdr.set(0x01010101); 
+			while regs.isr.get() == 1 {
+				regs.cdr.set(567); 
+			}
+
+			debug!("ISR: {}", regs.isr.get());
+			debug!("Version: {}", regs.version.get());
         }
 		return ReturnCode::SUCCESS;
     }
@@ -88,9 +110,19 @@ impl hil::dac::DacChannel for Dac {
             return ReturnCode::EOFF;
         } 
 		else {
-			regs.cdr.set(value);
+			
+			/// Set DAC value
+			while regs.isr.get() == 1 {
+				regs.cdr.set(567); 
+			}
+
+			//regs.cdr.set(value);
             return ReturnCode::SUCCESS;
         }
     }
 
 }
+
+
+interrupt_handler!(dacc_handler, DACC);
+

@@ -12,6 +12,7 @@ use nvic;
 use spi;
 use trng;
 use usart;
+use dac;
 
 pub struct Sam4l {
     pub mpu: cortexm4::mpu::MPU,
@@ -123,6 +124,7 @@ impl Chip for Sam4l {
 
                     HFLASHC => flashcalw::FLASH_CONTROLLER.handle_interrupt(),
                     ADCIFE => adc::ADC.handle_interrupt(),
+					DACC => dac::DAC.handle_interrupt(),
 
                     TRNG => trng::TRNG.handle_interrupt(),
                     _ => {}

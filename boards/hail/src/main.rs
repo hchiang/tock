@@ -5,7 +5,7 @@
 extern crate capsules;
 extern crate cortexm4;
 extern crate compiler_builtins;
-#[macro_use(static_init)]
+#[macro_use(debug, static_init)]
 extern crate kernel;
 extern crate sam4l;
 
@@ -403,7 +403,14 @@ pub unsafe fn reset_handler() {
     let mut chip = sam4l::chip::Sam4l::new();
     chip.mpu().enable_mpu();
 
-    // Uncomment to measure overheads for TakeCell and MapCell:
+	let value = 512;
+	let dac = &sam4l::dac::DAC as &hil::dac::DacChannel;
+	debug!("Initialize DAC");
+	dac.initialize();
+	//debug!("Setting DAC value to: {}", value);
+	dac.set_value(value);
+    
+	// Uncomment to measure overheads for TakeCell and MapCell:
     // test_take_map_cell::test_take_map_cell();
 
     // debug!("Initialization complete. Entering main loop");
