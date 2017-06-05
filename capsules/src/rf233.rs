@@ -27,6 +27,7 @@ use kernel::hil::gpio;
 use kernel::hil::radio;
 use kernel::hil::spi;
 use rf233_const::*;
+use power::{PowerManager, PowerClient};
 
 const INTERRUPT_ID: usize = 0x2154;
 
@@ -172,6 +173,7 @@ enum InternalState {
 
 pub struct RF233<'a, S: spi::SpiMasterDevice + 'a> {
     spi: &'a S,
+    power_manager: &'a PowerManager,
     radio_on: Cell<bool>,
     transmitting: Cell<bool>,
     receiving: Cell<bool>,
@@ -200,6 +202,12 @@ pub struct RF233<'a, S: spi::SpiMasterDevice + 'a> {
     spi_rx: TakeCell<'static, [u8]>,
     spi_tx: TakeCell<'static, [u8]>,
     spi_buf: TakeCell<'static, [u8]>,
+}
+
+impl<'a, S: spi::SpiMasterDevice + 'a> PowerClient for RF233<'a, S> {
+    fn clock_updated(&self, _clock: u32) {
+        // Ignore for now
+    }
 }
 
 fn setting_to_power(setting: u8) -> i8 {
@@ -763,6 +771,7 @@ impl<'a, S: spi::SpiMasterDevice + 'a> gpio::Client for RF233<'a, S> {
 
 impl<'a, S: spi::SpiMasterDevice + 'a> RF233<'a, S> {
     pub fn new(spi: &'a S,
+               power_manager: &'a PowerManager,
                reset: &'a gpio::Pin,
                sleep: &'a gpio::Pin,
                irq: &'a gpio::Pin,
@@ -770,6 +779,7 @@ impl<'a, S: spi::SpiMasterDevice + 'a> RF233<'a, S> {
                -> RF233<'a, S> {
         RF233 {
             spi: spi,
+            power_manager: power_manager,
             reset_pin: reset,
             sleep_pin: sleep,
             irq_pin: irq,
@@ -976,6 +986,7 @@ impl<'a, S: spi::SpiMasterDevice + 'a> radio::RadioConfig for RF233<'a, S> {
         self.spi_buf.replace(buf);
         self.spi_rx.replace(reg_read);
         self.spi_tx.replace(reg_write);
+        self.power_manager.report_acceptable_clocks(0xdeadbeef);
         ReturnCode::SUCCESS
     }
 

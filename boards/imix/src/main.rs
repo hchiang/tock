@@ -8,6 +8,7 @@ extern crate compiler_builtins;
 extern crate kernel;
 extern crate sam4l;
 
+use capsules::power::PowerManager;
 use capsules::rf233::RF233;
 use capsules::timer::TimerDriver;
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
@@ -20,6 +21,8 @@ use kernel::hil::radio;
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::spi::SpiMaster;
 use kernel::mpu::MPU;
+
+pub mod power;
 
 #[macro_use]
 pub mod io;
@@ -49,6 +52,7 @@ struct Imix {
                                                  capsules::rf233::RF233<'static,
                                                  VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>>,
     crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
+    power_manager: &'static power::ImixPowerManager,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -169,6 +173,10 @@ pub unsafe fn reset_handler() {
 
     set_pin_primary_functions();
 
+    let power_manager = static_init!(power::ImixPowerManager,
+                                     power::ImixPowerManager::new(),
+                                     96/8);
+
     // # CONSOLE
 
     let console = static_init!(
@@ -280,13 +288,16 @@ pub unsafe fn reset_handler() {
     let rf233: &RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi>> =
         static_init!(RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>,
                              RF233::new(rf233_spi,
+                                        power_manager,
                                         &sam4l::gpio::PA[09],    // reset
                                         &sam4l::gpio::PA[10],    // sleep
                                         &sam4l::gpio::PA[08],    // irq
                                         &sam4l::gpio::PA[08]),   // irq_ctl
-                                        1056/8);
+                                        1120/8);
 
     sam4l::gpio::PA[08].set_client(rf233);
+
+    power_manager.register_client(rf233);
 
     // FXOS8700CQ accelerometer, device address 0x1e
     let fxos8700_i2c = static_init!(I2CDevice, I2CDevice::new(mux_i2c, 0x1e), 32);
@@ -410,6 +421,7 @@ pub unsafe fn reset_handler() {
         ipc: kernel::ipc::IPC::new(),
         ninedof: ninedof,
         radio: radio_capsule,
+        power_manager: power_manager,
     };
 
     let mut chip = sam4l::chip::Sam4l::new();
@@ -422,6 +434,8 @@ pub unsafe fn reset_handler() {
     //    rf233.config_commit();
 
     rf233.start();
+
+    imix.power_manager.update_clock();
 
     debug!("Initialization complete. Entering main loop");
     kernel::main(&imix, &mut chip, load_processes(), &imix.ipc);
