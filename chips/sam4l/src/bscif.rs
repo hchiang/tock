@@ -2,7 +2,7 @@
 
 use kernel::common::VolatileCell;
 
-#[repr(C)]
+#[repr(C, packed)]
 struct BscifRegisters {
     ier: VolatileCell<u32>,
     idr: VolatileCell<u32>,
@@ -53,9 +53,7 @@ pub unsafe fn enable_rc32k() {
     // Write the BSCIF::RC32KCR register.
     // Enable the generic clock source, the temperature compensation, and the
     // 32k output.
-    (*BSCIF)
-        .rc32kcr
-        .set(bscif_rc32kcr | (1 << 2) | (1 << 1) | (1 << 0));
+    (*BSCIF).rc32kcr.set(bscif_rc32kcr | (1 << 2) | (1 << 1) | (1 << 0));
     // Wait for it to be ready, although it feels like this won't do anything
     while (*BSCIF).rc32kcr.get() & (1 << 0) == 0 {}
 
@@ -65,4 +63,37 @@ pub unsafe fn enable_rc32k() {
     (*BSCIF).unlock.set(0xAA000028);
     // Write the BSCIF::RC32KTUNE register
     (*BSCIF).rc32ktune.set(0x001d0015);
+}
+
+pub unsafe fn rc32k_enabled() -> bool {
+    return (*BSCIF).rc32kcr.get() & (1 << 2) == 1; 
+
+}
+
+pub unsafe fn disable_rc32k() {
+    // Unlock the BSCIF::RC32KCR register
+    (*BSCIF).unlock.set(0xAA000024);
+
+    // Disable the BSCIF::RC32KCR register
+    let bscif_rc32kcr = (*BSCIF).rc32kcr.get();
+    (*BSCIF).rc32kcr.set(bscif_rc32kcr & !(1 << 0));
+}
+
+pub unsafe fn setup_rc_1mhz() {
+
+    (*BSCIF).unlock.set(0xAA000058);
+
+    let bscif_rc1mcr = (*BSCIF).rc1mcr.get();
+    (*BSCIF).rc1mcr.set(bscif_rc1mcr | (1 << 0));
+    
+    // Wait for it to be ready
+    while (*BSCIF).pclksr.get() & (1 << 11) == 0 {}
+}
+
+pub unsafe fn disable_rc_1mhz() {
+
+    (*BSCIF).unlock.set(0xAA000058);
+
+    let bscif_rc1mcr = (*BSCIF).rc1mcr.get();
+    (*BSCIF).rc1mcr.set(bscif_rc1mcr & !(1 << 0));
 }

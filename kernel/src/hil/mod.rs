@@ -18,6 +18,7 @@ pub mod gpio_async;
 pub mod dac;
 pub mod nonvolatile_storage;
 pub mod usb;
+pub mod clock_pm;
 
 /// Shared interface for configuring components.
 pub trait Controller {

@@ -1,0 +1,55 @@
+use common::list::*;
+use core::cell::Cell;
+
+pub trait ClockClient<'a> {
+    /// The ClockManager will call this function to report a clock change
+    // clock_changed = whether or not clock actually changed
+    fn clock_updated(&self, clock_changed: bool);
+    fn get_params(&self) -> Option<&ClockParams>;
+    //TODO lock_callback function?
+    fn next_link(&'a self) -> &'a ListLink<'a, ClockClient<'a> + 'a>;
+}
+
+impl<'a> ListNode<'a, ClockClient<'a> + 'a> for ClockClient<'a> + 'a {
+   ///  
+    fn next(&'a self) -> &'a ListLink<'a, ClockClient<'a> + 'a> {
+        &self.next_link()
+    }
+}
+
+pub struct ClockParams {
+    /// clocklist: bitmask of clocks the client can operate with
+    pub clocklist: Cell<u32>, 
+    /// buslist: bitmask of all clock buses the device can be on
+    pub buslist: Cell<u32>,
+    /// max_freq: maximum operational frequency
+    pub max_frequency: Cell<u32>, 
+    /// min_freq: minimum operational frequency
+    pub min_frequency: Cell<u32>, 
+    /// thresh_freq: frequency above which increasing the clock does not help
+    pub thresh_frequency: Cell<u32>,
+}
+
+impl ClockParams {
+    pub const fn new(clocklist: u32, buslist: u32, 
+        max_frequency: u32, min_frequency: u32,
+        thresh_frequency: u32) -> ClockParams{
+        ClockParams{
+            clocklist: Cell::new(clocklist),
+            buslist: Cell::new(buslist),
+            max_frequency: Cell::new(max_frequency),
+            min_frequency: Cell::new(min_frequency),
+            thresh_frequency: Cell::new(thresh_frequency),
+        }
+    }
+}
+
+pub trait ClockManager<'a> {
+    /// Clients should call this function to update the ClockManager
+    /// on which clocks they can tolerate
+    ///
+    fn register(&mut self, c:&'a ClockClient<'a>);
+    fn lock(&mut self)->bool;
+    fn unlock(&mut self);
+    fn clock_change(&mut self);
+}

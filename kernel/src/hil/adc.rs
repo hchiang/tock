@@ -35,11 +35,20 @@ pub trait Client {
     fn sample_ready(&self, sample: u16);
 }
 
+
 // *** Interfaces for high-speed, buffered ADC sampling ***
 
 /// Interface for continuously sampling at a given frequency on a channel.
 /// Requires the AdcSimple interface to have been implemented as well.
 pub trait AdcHighSpeed: Adc {
+    /// Start sampling continuously until the buffer is full
+    fn sample_highspeed_once(&self,
+                        channel: &Self::Channel,
+                        frequency: u32,
+                        buffer: &'static mut [u16],
+                        length: usize)
+                        -> (ReturnCode, Option<&'static mut [u16]>);
+
     /// Start sampling continuously into buffers.
     /// Samples are double-buffered, going first into `buffer1` and then into
     /// `buffer2`. A callback is performed to the client whenever either buffer
@@ -47,19 +56,14 @@ pub trait AdcHighSpeed: Adc {
     /// `provide_buffer` call. Length fields correspond to the number of
     /// samples that should be collected in each buffer. If an error occurs,
     /// the buffers will be returned.
-    fn sample_highspeed(
-        &self,
-        channel: &Self::Channel,
-        frequency: u32,
-        buffer1: &'static mut [u16],
-        length1: usize,
-        buffer2: &'static mut [u16],
-        length2: usize,
-    ) -> (
-        ReturnCode,
-        Option<&'static mut [u16]>,
-        Option<&'static mut [u16]>,
-    );
+    fn sample_highspeed(&self,
+                        channel: &Self::Channel,
+                        frequency: u32,
+                        buffer1: &'static mut [u16],
+                        length1: usize,
+                        buffer2: &'static mut [u16],
+                        length2: usize)
+                        -> (ReturnCode, Option<&'static mut [u16]>, Option<&'static mut [u16]>);
 
     /// Provide a new buffer to fill with the ongoing `sample_continuous`
     /// configuration.
@@ -68,11 +72,10 @@ pub trait AdcHighSpeed: Adc {
     /// missed. Length field corresponds to the number of samples that should
     /// be collected in the buffer. If an error occurs, the buffer will be
     /// returned.
-    fn provide_buffer(
-        &self,
-        buf: &'static mut [u16],
-        length: usize,
-    ) -> (ReturnCode, Option<&'static mut [u16]>);
+    fn provide_buffer(&self,
+                      buf: &'static mut [u16],
+                      length: usize)
+                      -> (ReturnCode, Option<&'static mut [u16]>);
 
     /// Reclaim ownership of buffers.
     /// Can only be called when the ADC is inactive, which occurs after a
@@ -80,13 +83,8 @@ pub trait AdcHighSpeed: Adc {
     /// operation is complete. Returns success if the ADC was inactive, but
     /// there may still be no buffers that are `some` if the driver had already
     /// returned all buffers.
-    fn retrieve_buffers(
-        &self,
-    ) -> (
-        ReturnCode,
-        Option<&'static mut [u16]>,
-        Option<&'static mut [u16]>,
-    );
+    fn retrieve_buffers(&self)
+                        -> (ReturnCode, Option<&'static mut [u16]>, Option<&'static mut [u16]>);
 }
 
 /// Trait for handling callbacks from high-speed ADC calls.

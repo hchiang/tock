@@ -37,6 +37,7 @@ pub mod crccu;
 pub mod dac;
 pub mod aes;
 pub mod usbc;
+pub mod clock_pm;
 
 use cortexm4::{generic_isr, systick_handler, SVC_Handler};
 

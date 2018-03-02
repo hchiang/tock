@@ -63,7 +63,7 @@ pub enum GenericClock {
     GCLK11,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 struct Registers {
     ier: VolatileCell<u32>,
     idr: VolatileCell<u32>,
@@ -147,10 +147,11 @@ pub fn oscillator_disable() {
 
 pub unsafe fn setup_dfll_rc32k_48mhz() {
     // Check to see if the DFLL is already setup.
-    //
-    if (((*SCIF).dfll0conf.get() & 0x03) == 0) || (((*SCIF).pclksr.get() & (1 << 2)) == 0) {
+    if (((*SCIF).dfll0conf.get() & 0x01) == 0) || (((*SCIF).pclksr.get() & (1 << 2)) == 0) {
         // Enable the GENCLK_SRC_RC32K
-        bscif::enable_rc32k();
+        if !bscif::rc32k_enabled() {
+            bscif::enable_rc32k();
+        }
 
         // Next init closed loop mode.
         //
@@ -189,7 +190,8 @@ pub unsafe fn setup_dfll_rc32k_48mhz() {
         // unlock
         (*SCIF).unlock.set(0xAA000030);
         // 1464 = 48000000 / 32768
-        (*SCIF).dfll0mul.set(1464);
+        // Only when set to 1300 is the baud rate correct 
+        (*SCIF).dfll0mul.set(1300);
         while (*SCIF).pclksr.get() & (1 << 3) == 0 {}
         // Set SSG value
         // unlock
@@ -208,37 +210,140 @@ pub unsafe fn setup_dfll_rc32k_48mhz() {
     }
 }
 
+pub unsafe fn disable_dfll_rc32k() {
+    // Must do a SCIF sync before reading the SCIF register
+    (*SCIF).dfll0sync.set(0x01);
+    // Wait for it to be ready
+    while (*SCIF).pclksr.get() & (1 << 3) == 0 {}
+
+    // Disable the DFLL
+    //(*SCIF).unlock.set(0xAA000028);
+    let scif_dfll0conf = (*SCIF).dfll0conf.get();
+    (*SCIF).dfll0conf.set(scif_dfll0conf & !(1 << 0));
+
+    //disable gen clock
+    generic_clock_disable(GenericClock::GCLK0); 
+
+    //disable rc32k 
+    //bscif::disable_rc32k();
+}
+
 pub unsafe fn setup_osc_16mhz_fast_startup() {
+    // If the OSC0 is already on don't do anything
+    if (*SCIF).pclksr.get() & (1 << 0) == 1 {
+        return;
+    }
     // Enable the OSC0
     (*SCIF).unlock.set(0xAA000020);
     // enable, 557 us startup time, gain level 4 (sortof), is crystal.
-    (*SCIF)
-        .oscctrl0
-        .set((1 << 16) | (1 << 8) | (4 << 1) | (1 << 0));
+    (*SCIF).oscctrl0.set((1 << 16) | (1 << 8) | (4 << 1) | (1 << 0));
     // Wait for oscillator to be ready
     while (*SCIF).pclksr.get() & (1 << 0) == 0 {}
 }
 
 pub unsafe fn setup_osc_16mhz_slow_startup() {
+    // If the OSC0 is already on don't do anything
+    if (*SCIF).pclksr.get() & (1 << 0) == 1 {
+        return;
+    }
     // Enable the OSC0
     (*SCIF).unlock.set(0xAA000020);
     // enable, 8.9 ms startup time, gain level 4 (sortof), is crystal.
-    (*SCIF)
-        .oscctrl0
-        .set((1 << 16) | (14 << 8) | (4 << 1) | (1 << 0));
+    (*SCIF).oscctrl0.set((1 << 16) | (14 << 8) | (4 << 1) | (1 << 0));
     // Wait for oscillator to be ready
     while (*SCIF).pclksr.get() & (1 << 0) == 0 {}
+}
+
+pub unsafe fn disable_osc_16mhz() {
+    (*SCIF).unlock.set(0xAA000020);
+    let oscctrl = (*SCIF).oscctrl0.get();
+    (*SCIF).oscctrl0.set(oscctrl & !(1 << 16)); 
+    while (*SCIF).pclksr.get() & (1 << 0) == 1 {}
 }
 
 pub unsafe fn setup_pll_osc_48mhz() {
     // Enable the PLL0 register
     (*SCIF).unlock.set(0xAA000024);
     // Maximum startup time, multiply by 5, divide=1, divide output by 2, enable.
-    (*SCIF)
-        .pll0
-        .set((0x3F << 24) | (5 << 16) | (1 << 8) | (1 << 4) | (1 << 0));
+    (*SCIF).pll0.set((0x3F << 24) | (5 << 16) | (1 << 8) | (1 << 4) | (1 << 0));
     // Wait for the PLL to be ready
     while (*SCIF).pclksr.get() & (1 << 6) == 0 {}
+}
+
+pub unsafe fn disable_pll() {
+    // Disable the PLL0 register
+    (*SCIF).unlock.set(0xAA000024);
+    let scif_pll0 = (*SCIF).pll0.get();
+    (*SCIF).pll0.set(scif_pll0 & !(1 << 0));
+}
+
+pub unsafe fn setup_rc_80mhz() {
+    let scif_rc80mcr = (*SCIF).rc80mcr.get();
+    (*SCIF).unlock.set(0xAA000010);
+    // Enable the 80MHz RC register
+    (*SCIF).rc80mcr.set(scif_rc80mcr | (1 << 0));
+    // Wait for the 80MHz RC to be ready
+    while (*SCIF).rc80mcr.get() & (1 << 0) == 0 {}
+}
+
+pub unsafe fn disable_rc_80mhz() {
+    (*SCIF).unlock.set(0xAA000010);
+    // Disable the 80MHz RC register
+    let scif_rc80mcr = (*SCIF).rc80mcr.get();
+    (*SCIF).rc80mcr.set(scif_rc80mcr & !(1 << 0));
+}
+
+pub unsafe fn setup_rcfast_4mhz() {
+    // Let FCD and calibration value by default
+    let mut scif_rcfastcfg = (*SCIF).rcfastcfg.get();
+    // Clear the previous FRANGE value and disable Tuner
+    scif_rcfastcfg &= !((0x3 << 8) | (1 << 1));
+
+    (*SCIF).unlock.set(0xAA000008);
+    // Enable the RCFAST register
+    //open loop mode - tuner is disabled and doesn't need a 32K clock source
+    (*SCIF).rcfastcfg.set(scif_rcfastcfg | (0x0 << 8) | (1 << 0));
+    // Wait for the 4MHz RC to be ready
+    while (*SCIF).rcfastcfg.get() & (1 << 0) == 0 {}
+}
+
+pub unsafe fn setup_rcfast_8mhz() {
+    // Let FCD and calibration value by default
+    let mut scif_rcfastcfg = (*SCIF).rcfastcfg.get();
+    // Clear the previous FRANGE value
+    scif_rcfastcfg &= !((0x3 << 8) | (1 << 1));
+
+    (*SCIF).unlock.set(0xAA000008);
+    // Enable the RCFAST register
+    //open loop mode - tuner is disabled and doesn't need a 32K clock source
+    (*SCIF).rcfastcfg.set(scif_rcfastcfg | (0x1 << 8) | (1 << 0));
+    // Wait for the 8MHz RC to be ready
+    while (*SCIF).rcfastcfg.get() & (1 << 0) == 0 {}
+}
+
+pub unsafe fn setup_rcfast_12mhz() {
+    // Let FCD and calibration value by default
+    let mut scif_rcfastcfg = (*SCIF).rcfastcfg.get();
+    // Clear the previous FRANGE value
+    scif_rcfastcfg &= !((0x3 << 8) | (1 << 1));
+
+    (*SCIF).unlock.set(0xAA000008);
+    // Enable the RCFAST register
+    //open loop mode - tuner is disabled and doesn't need a 32K clock source
+    (*SCIF).rcfastcfg.set(scif_rcfastcfg | (0x2 << 8) | (1 << 0));
+    // Wait for the 12MHz RC to be ready
+    while (*SCIF).rcfastcfg.get() & (1 << 0) == 0 {}
+}
+
+pub unsafe fn disable_rcfast() {
+    (*SCIF).unlock.set(0xAA000008);
+
+    // Let FCD and calibration value by default
+    let mut scif_rcfastcfg = (*SCIF).rcfastcfg.get();
+    // Clear the previous FRANGE value
+    scif_rcfastcfg &= !(0x3 << 8);
+    // Disable the RCFAST register
+    (*SCIF).rcfastcfg.set(scif_rcfastcfg & !(1 << 0));
 }
 
 pub fn generic_clock_disable(clock: GenericClock) {
