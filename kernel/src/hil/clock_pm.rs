@@ -2,11 +2,12 @@ use common::list::*;
 use core::cell::Cell;
 
 pub trait ClockClient<'a> {
+    /// This function will by called by ClockManager's register function 
+    ///     Indicates the peripheral should turn on clock management
+    fn enable_cm(&self);
     /// The ClockManager will call this function to report a clock change
-    // clock_changed = whether or not clock actually changed
     fn clock_updated(&self, clock_changed: bool);
     fn get_params(&self) -> Option<&ClockParams>;
-    //TODO lock_callback function?
     fn next_link(&'a self) -> &'a ListLink<'a, ClockClient<'a> + 'a>;
 }
 

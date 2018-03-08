@@ -102,7 +102,9 @@ pub struct USART<'a> {
 
     spi_chip_select: Cell<Option<&'static hil::gpio::Pin>>,
 
+    cm_enabled: Cell<bool>,
     baud_rate: Cell<u32>,
+
     return_params: Cell<bool>,
     clock_params: ClockParams,
     has_lock: Cell<bool>,
@@ -165,8 +167,8 @@ impl<'a> USART<'a> {
             spi_chip_select: Cell::new(None),
             baud_rate: Cell::new(0),
 
+            cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            //Initially console baud rate 115200, min freq = 8*115200=921600
             clock_params: ClockParams::new(0x00000004, 0xffffffff, MAX, 1000000, 1000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
@@ -523,7 +525,7 @@ impl<'a> dma::DMAClient for USART<'a>{
                     self.rx_len.set(0);
 
                     self.callback_rx_len.set(0);
-                    if self.has_lock.get() && self.callback_tx_len.get() == 0 {
+                    if self.cm_enabled.get() && self.has_lock.get() && self.callback_tx_len.get() == 0 {
                         self.has_lock.set(false);
                         unsafe {
                             clock_pm::CM.unlock();
@@ -557,7 +559,10 @@ impl<'a> dma::DMAClient for USART<'a>{
                     self.tx_len.set(0);
 
                     self.callback_tx_len.set(0);
-                    if self.has_lock.get() && self.callback_rx_len.get() == 0 {
+                    if self.cm_enabled.get() && self.has_lock.get() && self.callback_rx_len.get() == 0 {
+                        let regs: &USARTRegisters = unsafe { &*self.registers };
+                        //Wait for TX buffer to empty
+                        while regs.csr.get() & (1 << 9) == 0 {};
                         self.has_lock.set(false);
                         unsafe {
                             clock_pm::CM.unlock();
@@ -680,7 +685,7 @@ impl<'a> hil::uart::UART for USART<'a> {
     fn transmit(&self, tx_data: &'static mut [u8], tx_len: usize) {
         self.callback_tx_data.replace(tx_data);
         self.callback_tx_len.set(tx_len);
-        if !self.has_lock.get() {
+        if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
             unsafe {
                 clock_pm::CM.clock_change();
@@ -714,7 +719,7 @@ impl<'a> hil::uart::UART for USART<'a> {
     fn receive(&self, rx_buffer: &'static mut [u8], rx_len: usize) {
         self.callback_rx_data.replace(rx_buffer);
         self.callback_rx_len.set(rx_len);
-        if !self.has_lock.get() {
+        if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
             unsafe {
                 clock_pm::CM.clock_change();
@@ -1025,6 +1030,10 @@ impl<'a> hil::spi::SpiMaster for USART<'a> {
 }
 
 impl<'a> hil::clock_pm::ClockClient<'a> for USART<'a> {
+    fn enable_cm(&self) {
+        self.cm_enabled.set(true);
+    }
+
     fn clock_updated(&self, clock_changed: bool) {
         if self.callback_tx_len.get() > 0 || self.callback_rx_len.get() > 0 {
             if clock_changed {

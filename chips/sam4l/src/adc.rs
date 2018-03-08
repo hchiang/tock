@@ -139,6 +139,7 @@ pub struct Adc<'a> {
     callback_length: Cell<usize>,
 
     // Clock manager
+    cm_enabled: Cell<bool>,
     return_params: Cell<bool>,
     clock_params: ClockParams,
     has_lock: Cell<bool>,
@@ -217,8 +218,9 @@ impl<'a> Adc<'a> {
             callback_length: Cell::new(0),
 
             // clock manager
+            cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x000001ff, 0xffffffff, 1500000, 0, 0),
+            clock_params: ClockParams::new(0x000001fc, 0xffffffff, 1500000, 0, 0),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
         }
@@ -292,7 +294,7 @@ impl<'a> Adc<'a> {
         self.clock_params.thresh_frequency.set(frequency*32);
         //TODO: why is the max ADC value 1.5 MHz?
         self.clock_params.max_frequency.set(1500000);
-        self.clock_params.clocklist.set(0x00000004);
+        //self.clock_params.clocklist.set(0x00000004);
     }
 
     // Disables the adc
@@ -738,7 +740,7 @@ impl<'a> hil::adc::Adc for Adc<'a> {
                 self.stopped_buffer.replace(buf);
             });
 
-            if self.has_lock.get() {
+            if self.cm_enabled.get() && self.has_lock.get() {
                 self.has_lock.set(false);
                 unsafe {
                     clock_pm::CM.unlock();
@@ -786,7 +788,7 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
             self.callback_buffer.replace(buffer);
             self.callback_length.set(length);
 
-            if !self.has_lock.get() {
+            if self.cm_enabled.get() && !self.has_lock.get() {
                 self.return_params.set(true);
                 self.set_clock_params(frequency);
                 unsafe {
@@ -1053,6 +1055,10 @@ impl<'a> dma::DMAClient for Adc<'a> {
 }
 
 impl<'a> hil::clock_pm::ClockClient<'a> for Adc<'a> {
+    fn enable_cm(&self) {
+        self.cm_enabled.set(true);
+    }
+
     fn clock_updated(&self, clock_changed: bool) {
         if self.return_params.get() {
             if !self.has_lock.get() {

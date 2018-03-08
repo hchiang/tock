@@ -26,6 +26,7 @@ use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
 use pm;
+use kernel::common::take_cell::TakeCell;
 
 /// The registers used to interface with the hardware
 #[repr(C, packed)]
@@ -159,10 +160,16 @@ pub struct Spi<'a> {
     slave_client: Cell<Option<&'static SpiSlaveClient>>,
     role: Cell<SpiRole>,
 
-    spi_clock_on: Cell<bool>,
     baud_rate: Cell<u32>,
+
+    callback_read_buffer: TakeCell<'static, [u8]>,
+    callback_write_buffer: TakeCell<'static, [u8]>,
+    callback_len: Cell<usize>,
+
+    cm_enabled: Cell<bool>,
     return_params: Cell<bool>,
     clock_params: ClockParams,
+    has_lock: Cell<bool>,
     next: ListLink<'a, ClockClient<'a>>,
 }
 
@@ -182,9 +189,15 @@ impl<'a> Spi<'a> {
             slave_client: Cell::new(None),
             role: Cell::new(SpiRole::SpiMaster),
 
-            spi_clock_on: Cell::new(false),
             baud_rate: Cell::new(0),
+
+            callback_read_buffer: TakeCell::empty(),
+            callback_write_buffer: TakeCell::empty(),
+            callback_len: Cell::new(0),
+
+            cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
+            has_lock: Cell::new(false),
             //TODO: spi doesn't work with RC1M or RCFAST
             clock_params: ClockParams::new(0x00000010, 0xffffffff, 80000000, 1000000, 1000000),
             next: ListLink::empty(),
@@ -476,35 +489,50 @@ impl<'a> Spi<'a> {
         // depending on the presence of the read/write below
         self.transfers_in_progress.set(0);
 
-        self.return_params.set(true);
-        if !self.spi_clock_on.get() {
+        self.callback_len.set(count);
+        match read_buffer {
+            Some(buf) => self.callback_read_buffer.put(Some(buf)),
+            None => self.callback_read_buffer.put(None),
+        }
+        match write_buffer {
+            Some(buf) => self.callback_write_buffer.put(Some(buf)),
+            None => self.callback_write_buffer.put(None),
+        }
+
+        if self.cm_enabled.get() && !self.has_lock.get() {
+            self.return_params.set(true);
             unsafe {
-                // Copies to 64 bytes buffer
                 clock_pm::CM.clock_change();
             }
         }
+        else {
+            self.read_write_callback();
+        }
+        ReturnCode::SUCCESS
+    }
+
+    fn read_write_callback(&self) {
 
         // The ordering of these operations matters.
         // For transfers 4 bytes or longer, this will work as expected.
         // For shorter transfers, the first byte will be missing.
-        write_buffer.map(|wbuf| {
+        self.callback_write_buffer.take().map(|wbuf| {
             self.transfers_in_progress.set(self.transfers_in_progress.get() + 1);
             self.dma_write.get().map(move |write| {
                 write.enable();
-                write.do_xfer(DMAPeripheral::SPI_TX, wbuf, count);
+                write.do_xfer(DMAPeripheral::SPI_TX, wbuf, self.callback_len.get());
             });
         });
 
         // Only setup the RX channel if we were passed a read_buffer inside
         // of the option. `map()` checks this for us.
-        read_buffer.map(|rbuf| {
+        self.callback_read_buffer.take().map(|rbuf| {
             self.transfers_in_progress.set(self.transfers_in_progress.get() + 1);
             self.dma_read.get().map(move |read| {
                 read.enable();
-                read.do_xfer(DMAPeripheral::SPI_RX, rbuf, count);
+                read.do_xfer(DMAPeripheral::SPI_RX, rbuf, self.callback_len.get());
             });
         });
-        ReturnCode::SUCCESS
     }
 }
 
@@ -721,18 +749,27 @@ impl<'a> DMAClient for Spi<'a>{
     }
 }
 
-//TODO when to call clock_change after spi is done
 impl<'a> hil::clock_pm::ClockClient<'a> for Spi<'a> {
+    fn enable_cm(&self) {
+        self.cm_enabled.set(true);
+    }
+
     fn clock_updated(&self, clock_changed: bool) {
         if clock_changed {
             self.set_baud_rate(self.baud_rate.get());
         }
-        if self.return_params.get() {
-            self.spi_clock_on.set(true);
+
+        if !self.has_lock.get() {
+            unsafe {
+                self.has_lock.set(clock_pm::CM.lock()); 
+            }
+            if !self.has_lock.get() {
+                return;
+            }
         }
-        else {
-            self.spi_clock_on.set(false);
-        }
+        self.return_params.set(false);
+
+        self.read_write_callback();
     }
 
     fn get_params(&self) -> Option<&ClockParams> {

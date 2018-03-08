@@ -344,6 +344,7 @@ pub unsafe fn disable_rcfast() {
     scif_rcfastcfg &= !(0x3 << 8);
     // Disable the RCFAST register
     (*SCIF).rcfastcfg.set(scif_rcfastcfg & !(1 << 0));
+    while (*SCIF).rcfastcfg.get() & (1 << 0) == 1 {}
 }
 
 pub fn generic_clock_disable(clock: GenericClock) {

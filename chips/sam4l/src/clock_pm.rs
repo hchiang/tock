@@ -95,6 +95,7 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
 
     fn register(&mut self, c:&'a ClockClient<'a>) {
         self.clients.push_head(c);
+        c.enable_cm();
     }
     
     fn lock(&mut self) -> bool {

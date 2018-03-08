@@ -167,6 +167,7 @@ pub struct FLASHCALW<'a> {
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
 
+    cm_enabled: Cell<bool>,
     return_params: Cell<bool>,
     clock_params: ClockParams,
     has_lock: Cell<bool>,
@@ -221,8 +222,9 @@ impl<'a> FLASHCALW<'a> {
             client: Cell::new(None),
             current_state: Cell::new(FlashState::Unconfigured),
             buffer: TakeCell::empty(),
+            cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x00000004, 0xffffffff, 80000000,1000000,1000000),
+            clock_params: ClockParams::new(0x000001fe, 0xffffffff, 80000000,1000000,1000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
             read_callback_address: Cell::new(0),
@@ -325,7 +327,7 @@ impl<'a> FLASHCALW<'a> {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
-                if self.has_lock.get() {
+                if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
@@ -339,7 +341,7 @@ impl<'a> FLASHCALW<'a> {
                 });
             }
             FlashState::WriteUnlocking { page } => {
-                if !self.has_lock.get() {
+                if self.cm_enabled.get() && !self.has_lock.get() {
                     self.return_params.set(true);
                     unsafe {
                         clock_pm::CM.clock_change();
@@ -366,7 +368,7 @@ impl<'a> FLASHCALW<'a> {
 
                 self.current_state.set(FlashState::Ready);
 
-                if self.has_lock.get() {
+                if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
@@ -380,7 +382,7 @@ impl<'a> FLASHCALW<'a> {
                 });
             }
             FlashState::EraseUnlocking { page } => {
-                if !self.has_lock.get() {
+                if self.cm_enabled.get() && !self.has_lock.get() {
                     self.return_params.set(true);
                     unsafe {
                         clock_pm::CM.clock_change();
@@ -393,7 +395,7 @@ impl<'a> FLASHCALW<'a> {
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
 
-                if self.has_lock.get() {
+                if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
@@ -863,7 +865,7 @@ impl<'a> FLASHCALW<'a> {
         self.buffer.replace(buffer);
 
         self.current_state.set(FlashState::Read);
-        if !self.has_lock.get() {
+        if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
             unsafe {
                 clock_pm::CM.clock_change();
@@ -956,6 +958,10 @@ impl<'a> hil::flash::Flash for FLASHCALW<'a> {
 }
 
 impl<'a> hil::clock_pm::ClockClient<'a> for FLASHCALW<'a> {
+    fn enable_cm(&self) {
+        self.cm_enabled.set(true);
+    }
+
     fn clock_updated(&self, clock_changed: bool) {
         if self.return_params.get() {
             if !self.has_lock.get() {
