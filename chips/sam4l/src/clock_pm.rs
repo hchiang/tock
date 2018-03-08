@@ -78,11 +78,11 @@ impl<'a> ImixClockManager<'a> {
         self.current_clock = clock;
 
         if clock_changed {
-            //debug_gpio!(0,set);
+            debug_gpio!(0,set);
             unsafe {
                 pm::PM.change_system_clock(system_clock);
             }
-            //debug_gpio!(0,clear);
+            debug_gpio!(0,clear);
         }
 
         for client in self.clients.iter() {

@@ -326,7 +326,7 @@ pub unsafe fn reset_handler() {
     sam4l::spi::SPI.set_client(mux_spi);
     sam4l::spi::SPI.init();
     sam4l::spi::SPI.enable();
-    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
 
     // Create a virtualized client for SPI system call interface,
     // then the system call capsule
@@ -436,7 +436,7 @@ pub unsafe fn reset_handler() {
         )
     );
     sam4l::adc::ADC0.set_client(adc);
-    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
 
     // # GPIO
     // set GPIO driver controlling remaining GPIO pins

@@ -169,7 +169,8 @@ impl<'a> USART<'a> {
 
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x00000004, 0xffffffff, MAX, 1000000, 1000000),
+            //PLL-> ExtOsc, RCFAST, RC1M
+            clock_params: ClockParams::new(0x00000100, 0xffffffff, MAX, 1000000, 1000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
 
@@ -1035,7 +1036,7 @@ impl<'a> hil::clock_pm::ClockClient<'a> for USART<'a> {
     }
 
     fn clock_updated(&self, clock_changed: bool) {
-        if self.callback_tx_len.get() > 0 || self.callback_rx_len.get() > 0 {
+        if self.return_params.get() {
             if clock_changed {
                 self.reset();
                 self.set_baud_rate(self.baud_rate.get());

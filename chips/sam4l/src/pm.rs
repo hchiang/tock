@@ -479,27 +479,23 @@ unsafe fn configure_48mhz_dfll() {
 unsafe fn configure_external_oscillator(frequency: OscillatorFrequency,
                                         startup_mode: OscillatorStartup) {
 
-    // If the PLL is on the external oscillator must already be on
-    // Turn on external oscillator if PLL is off
-    if PM.system_on_clocks.get() & (1 << 7) == 0 {
-
-        // start the external oscillator
-        match frequency {
-            OscillatorFrequency::Frequency16MHz => {
-                match startup_mode {
-                    OscillatorStartup::FastStart => scif::setup_osc_16mhz_fast_startup(),
-                    OscillatorStartup::SlowStart => scif::setup_osc_16mhz_slow_startup(),
-                };
-            }
+    // start the external oscillator
+    match frequency {
+        OscillatorFrequency::Frequency16MHz => {
+            match startup_mode {
+                OscillatorStartup::FastStart => scif::setup_osc_16mhz_fast_startup(),
+                OscillatorStartup::SlowStart => scif::setup_osc_16mhz_slow_startup(),
+            };
         }
     }
-
+    
     // Set wait state
     // Wait state depends on power scaling mode
     flashcalw::FLASH_CONTROLLER.set_wait_state(0);
 
     // Set the main clock to be the external oscillator
     select_main_clock(MainClock::OSC0);
+
 
     PM.system_frequency.set(16000000);
     let clock_mask = PM.system_on_clocks.get();
@@ -510,15 +506,12 @@ unsafe fn configure_external_oscillator(frequency: OscillatorFrequency,
 unsafe fn configure_external_oscillator_pll(frequency: OscillatorFrequency,
                                         startup_mode: OscillatorStartup) {
 
-    // start the external oscillator if it's not already on
-    if PM.system_on_clocks.get() & (1 << 5) == 0 {
-        match frequency {
-            OscillatorFrequency::Frequency16MHz => {
-                match startup_mode {
-                    OscillatorStartup::FastStart => scif::setup_osc_16mhz_fast_startup(),
-                    OscillatorStartup::SlowStart => scif::setup_osc_16mhz_slow_startup(),
-                };
-            }
+    match frequency {
+        OscillatorFrequency::Frequency16MHz => {
+            match startup_mode {
+                OscillatorStartup::FastStart => scif::setup_osc_16mhz_fast_startup(),
+                OscillatorStartup::SlowStart => scif::setup_osc_16mhz_slow_startup(),
+            };
         }
     }
 
