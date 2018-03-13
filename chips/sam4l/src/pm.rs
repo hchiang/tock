@@ -247,13 +247,13 @@ static mut PM_REGS: *mut PmRegisters = PM_BASE as *mut PmRegisters;
 /// system is running at.
 pub struct PowerManager {
     /// Frequency at which the system clock is running.
-    system_frequency: VolatileCell<u32>,
+    system_frequency: Cell<u32>,
 
     /// Clock source configuration
     system_clock_source: Cell<SystemClockSource>,
 
     /// Mask of clocks that are on
-    system_on_clocks: VolatileCell<u32>,
+    system_on_clocks: Cell<u32>,
 
     /// Has setup_system_clock been called already
     system_initial_configs: Cell<bool>,
@@ -261,12 +261,12 @@ pub struct PowerManager {
 
 pub static mut PM: PowerManager = PowerManager {
     /// Set to the RCSYS frequency by default 
-    system_frequency: VolatileCell::new(115200),
+    system_frequency: Cell::new(115200),
 
     /// Set to the RCSYS by default.
     system_clock_source: Cell::new(SystemClockSource::RcsysAt115kHz),
 
-    system_on_clocks: VolatileCell::new(0x00000001),
+    system_on_clocks: Cell::new(0x00000001),
 
     system_initial_configs: Cell::new(false),
 };
@@ -612,6 +612,26 @@ unsafe fn configure_1mhz_rc() {
 
 pub fn get_system_frequency() -> u32 {
     unsafe { PM.system_frequency.get() }
+}
+
+pub fn get_clock_frequency(clock_source: SystemClockSource) -> u32 {
+    let freq = match clock_source {
+        SystemClockSource::RcsysAt115kHz => 115200,
+        SystemClockSource::ExternalOscillator { frequency, startup_mode } => 16000000,
+        SystemClockSource::PllExternalOscillatorAt48MHz { frequency, startup_mode } => 48000000,
+        SystemClockSource::DfllRc32kAt48MHz => 48000000,
+        SystemClockSource::RC80M => 40000000,
+        SystemClockSource::RCFAST {frequency} => {
+            match frequency {
+                RcfastFrequency::Frequency4MHz => 4300000,
+                RcfastFrequency::Frequency8MHz => 8200000,
+                RcfastFrequency::Frequency12MHz => 12000000,
+            }
+        }
+        SystemClockSource::RC1M => 1000000,
+    };
+    freq
+    
 }
 
 /// Utility macro to modify clock mask registers

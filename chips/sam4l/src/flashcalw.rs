@@ -224,7 +224,7 @@ impl<'a> FLASHCALW<'a> {
             buffer: TakeCell::empty(),
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x000001fe, 0xffffffff, 80000000,1000000,1000000),
+            clock_params: ClockParams::new(0x000001ff, 0, 80000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
             read_callback_address: Cell::new(0),
@@ -343,8 +343,12 @@ impl<'a> FLASHCALW<'a> {
             FlashState::WriteUnlocking { page } => {
                 if self.cm_enabled.get() && !self.has_lock.get() {
                     self.return_params.set(true);
+                    let mut need_clock_change = false;
                     unsafe {
-                        clock_pm::CM.clock_change();
+                        need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+                    }
+                    if !need_clock_change {
+                        self.clock_updated(false);
                     }
                     return;
                 }    
@@ -384,8 +388,12 @@ impl<'a> FLASHCALW<'a> {
             FlashState::EraseUnlocking { page } => {
                 if self.cm_enabled.get() && !self.has_lock.get() {
                     self.return_params.set(true);
+                    let mut need_clock_change = false;
                     unsafe {
-                        clock_pm::CM.clock_change();
+                        need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+                    }
+                    if !need_clock_change {
+                        self.clock_updated(false);
                     }
                     return;
                 }    
@@ -867,8 +875,12 @@ impl<'a> FLASHCALW<'a> {
         self.current_state.set(FlashState::Read);
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
+            let mut need_clock_change = false;
             unsafe {
-                clock_pm::CM.clock_change();
+                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+            }
+            if !need_clock_change {
+                self.clock_updated(false);
             }
         }    
         else {

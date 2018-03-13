@@ -436,7 +436,7 @@ pub unsafe fn reset_handler() {
         )
     );
     sam4l::adc::ADC0.set_client(adc);
-    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
 
     // # GPIO
     // set GPIO driver controlling remaining GPIO pins
@@ -582,7 +582,7 @@ pub unsafe fn reset_handler() {
             &mut sam4l::flashcalw::FLASH_CONTROLLER,
             &mut FLASH_PAGEBUFFER));
     hil::flash::HasClient::set_client(&sam4l::flashcalw::FLASH_CONTROLLER, nv_to_page);
-    //sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let flash_driver = static_init!(
         capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,

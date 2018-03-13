@@ -236,7 +236,7 @@ impl<'a> Spi<'a> {
             return_params: Cell::new(false),
             has_lock: Cell::new(false),
             //TODO: spi doesn't work with RC1M or RCFAST
-            clock_params: ClockParams::new(0x00000010, 0xffffffff, 80000000, 1000000, 1000000),
+            clock_params: ClockParams::new(0x000001ff, 0, 48000000),
             next: ListLink::empty(),
         }
     }
@@ -311,7 +311,6 @@ impl<'a> Spi<'a> {
 
         self.baud_rate.set(rate);
         self.clock_params.min_frequency.set(rate);
-        self.clock_params.thresh_frequency.set(rate);
         //TODO: bus clock could be further divided?
         self.clock_params.max_frequency.set(rate*255);
 
@@ -492,8 +491,12 @@ impl<'a> Spi<'a> {
 
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
+            let mut need_clock_change = false;
             unsafe {
-                clock_pm::CM.clock_change();
+                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+            }
+            if !need_clock_change {
+                self.clock_updated(false);
             }
         }
         else {
@@ -732,7 +735,12 @@ impl<'a> DMAClient for Spi<'a> {
                 }
             }
 
-            self.return_params.set(false);
+            if self.cm_enabled.get() && self.has_lock.get() {
+                self.has_lock.set(false);
+                unsafe {
+                    clock_pm::CM.unlock();
+                }
+            }
         }
     }
 }
@@ -747,17 +755,18 @@ impl<'a> ClockClient<'a> for Spi<'a> {
             self.set_baud_rate(self.baud_rate.get());
         }
 
-        if !self.has_lock.get() {
-            unsafe {
-                self.has_lock.set(clock_pm::CM.lock()); 
-            }
+        if self.return_params.get() {
             if !self.has_lock.get() {
-                return;
+                unsafe {
+                    self.has_lock.set(clock_pm::CM.lock()); 
+                }
+                if !self.has_lock.get() {
+                    return;
+                }
             }
+            self.return_params.set(false);
+            self.read_write_callback();
         }
-        self.return_params.set(false);
-
-        self.read_write_callback();
     }
 
     fn get_params(&self) -> Option<&ClockParams> {

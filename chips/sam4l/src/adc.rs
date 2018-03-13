@@ -220,7 +220,7 @@ impl<'a> Adc<'a> {
             // clock manager
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x000001fc, 0xffffffff, 1500000, 0, 0),
+            clock_params: ClockParams::new(0x000001fc, 0, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
         }
@@ -285,16 +285,6 @@ impl<'a> Adc<'a> {
             regs.idr.set(0x2F);
             regs.scr.set(0x2F);
         }
-    }
-
-    // Sets clock_params
-    fn set_clock_params(&self, frequency: u32) {
-
-        self.clock_params.min_frequency.set(frequency*32);
-        self.clock_params.thresh_frequency.set(frequency*32);
-        //TODO: why is the max ADC value 1.5 MHz?
-        self.clock_params.max_frequency.set(1500000);
-        //self.clock_params.clocklist.set(0x00000004);
     }
 
     // Disables the adc
@@ -790,9 +780,13 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
 
             if self.cm_enabled.get() && !self.has_lock.get() {
                 self.return_params.set(true);
-                self.set_clock_params(frequency);
+                self.clock_params.min_frequency.set(frequency*32);
+                let mut need_clock_change =false;
                 unsafe {
-                    clock_pm::CM.clock_change();
+                    need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+                }
+                if !need_clock_change {
+                    self.clock_updated(false);
                 }
             }
             else {

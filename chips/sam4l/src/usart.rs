@@ -4,8 +4,6 @@
 
 use core::cell::Cell;
 use core::cmp;
-use core::u32::MAX;
-use core::u32::MIN;
 use dma;
 use kernel::ReturnCode;
 use kernel::common::VolatileCell;
@@ -170,7 +168,7 @@ impl<'a> USART<'a> {
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
             //PLL-> ExtOsc, RCFAST, RC1M
-            clock_params: ClockParams::new(0x00000100, 0xffffffff, MAX, 1000000, 1000000),
+            clock_params: ClockParams::new(0x000001ff, 0, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
 
@@ -412,7 +410,6 @@ impl<'a> USART<'a> {
             UsartMode::Uart => {
                 let uart_baud_rate = 8*baud_rate;
                 self.clock_params.min_frequency.set(uart_baud_rate);
-                self.clock_params.thresh_frequency.set(uart_baud_rate);
                 let div = system_frequency / uart_baud_rate;
                 //Generate fractional part
                 let fp = (system_frequency+baud_rate/2)/baud_rate - 8*div;
@@ -420,7 +417,6 @@ impl<'a> USART<'a> {
             }
             UsartMode::Spi => {
                 self.clock_params.min_frequency.set(baud_rate);
-                self.clock_params.thresh_frequency.set(baud_rate);
                 system_frequency / baud_rate
             }
             _ => 0,
@@ -638,7 +634,6 @@ impl<'a> hil::uart::UART for USART<'a> {
         //Assumes starts in Uart Mode
         let desired_clock = params.baud_rate * 8;
         self.clock_params.min_frequency.set(desired_clock);
-        self.clock_params.thresh_frequency.set(desired_clock);
 
         // enable USART clock
         //  must do this before writing any registers
@@ -688,8 +683,12 @@ impl<'a> hil::uart::UART for USART<'a> {
         self.callback_tx_len.set(tx_len);
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
+            let mut need_clock_change = false;
             unsafe {
-                clock_pm::CM.clock_change();
+                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+            }
+            if !need_clock_change {
+                self.clock_updated(false);
             }
         }
         else {
@@ -722,8 +721,12 @@ impl<'a> hil::uart::UART for USART<'a> {
         self.callback_rx_len.set(rx_len);
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
+            let mut need_clock_change = false;
             unsafe {
-                clock_pm::CM.clock_change();
+                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
+            }
+            if !need_clock_change {
+                self.clock_updated(false);
             }
         }
         else {
@@ -1036,12 +1039,12 @@ impl<'a> hil::clock_pm::ClockClient<'a> for USART<'a> {
     }
 
     fn clock_updated(&self, clock_changed: bool) {
-        if self.return_params.get() {
-            if clock_changed {
-                self.reset();
-                self.set_baud_rate(self.baud_rate.get());
-            }
+        if clock_changed {
+            self.reset();
+            self.set_baud_rate(self.baud_rate.get());
+        }
 
+        if self.return_params.get() {
             if !self.has_lock.get() {
                 unsafe {
                     self.has_lock.set(clock_pm::CM.lock()); 
@@ -1055,7 +1058,7 @@ impl<'a> hil::clock_pm::ClockClient<'a> for USART<'a> {
             if self.callback_rx_len.get() > 0 {
                 self.receive_callback();
             }
-            else {
+            if self.callback_tx_len.get() > 0 {
                 self.transmit_callback();
             }
         }

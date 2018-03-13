@@ -1,4 +1,4 @@
-use kernel::hil::clock_pm::{ClockManager,ClockClient};
+use kernel::hil::clock_pm::{ClockManager,ClockClient,ClockParams};
 //use core::cell::Cell;
 use core::u32::MAX;
 use core::u32::MIN;
@@ -8,8 +8,6 @@ use kernel::common::List;
 #[macro_use(debug_gpio)]
 
 const NUM_CLOCK_SOURCES: usize = 9; //size of SystemClockSource
-
-//TODO: option to turn off ClockManager for time important peripherals 
 
 pub struct ImixClockManager<'a> {
     clients: List<'a, ClockClient<'a> + 'a>,
@@ -22,8 +20,6 @@ impl<'a> ImixClockManager<'a> {
 
     fn choose_clock(&self) -> u32 {
         //Assume there will always be a clock that works for all peripherals
-        //TODO: also choose frequency
-        //TODO: bus assignments + clock prescaling per bus depending on the peripherals 
 
         let mut clockmask : u32 = 0xffffffff;
         let mut max_freq : u32 = MAX;
@@ -42,19 +38,21 @@ impl<'a> ImixClockManager<'a> {
         }
 
         for i in 0..NUM_CLOCK_SOURCES {
-            if (clockmask >> i) & 0b1 == 1 {
+            if ((clockmask >> i) & 0b1 == 1) && self.frequency_check(i as u32,max_freq,min_freq) {
                 return i as u32;
             } 
         }
         return 0;
     }
 
-    pub fn update_clock(&mut self){
+    fn frequency_check(&self, clock: u32, max_freq: u32, min_freq: u32) -> bool {
+        let mut freq = pm::get_clock_frequency(self.convert_to_clock(clock));
+        return (freq >= min_freq) && (freq <= max_freq);
+    }
 
-        let clock = self.choose_clock();
-
-        let mut system_clock = pm::SystemClockSource::RcsysAt115kHz;
+    fn convert_to_clock(&self, clock: u32)->pm::SystemClockSource{
         //Roughly ordered in terms of least to most power consumption
+        let mut system_clock = pm::SystemClockSource::RcsysAt115kHz;
         match clock {
             1 => system_clock = pm::SystemClockSource::RC1M,
             2 => system_clock = pm::SystemClockSource::RCFAST{
@@ -73,11 +71,19 @@ impl<'a> ImixClockManager<'a> {
             8 => system_clock = pm::SystemClockSource::RC80M,
             _ => system_clock = pm::SystemClockSource::RcsysAt115kHz,
         }
+        return system_clock;
+    }
 
+    fn update_clock(&mut self){
+
+        let clock = self.choose_clock();
         let clock_changed = self.current_clock != clock;
         self.current_clock = clock;
 
+        self.change_clock = false;
+
         if clock_changed {
+            let system_clock = self.convert_to_clock(clock);
             debug_gpio!(0,set);
             unsafe {
                 pm::PM.change_system_clock(system_clock);
@@ -109,21 +115,32 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
     //Automatically calls clock_change if possible after a peripheral calls unlock
     fn unlock(&mut self){
         self.lock_count -= 1;
-        //if (self.lock_count == 0) & self.change_clock {
         if self.lock_count == 0 {
-            self.clock_change();
+            self.lock_count += 1;
+            self.update_clock();
+            self.lock_count -= 1;
         }
     }
 
-    fn clock_change(&mut self){
+    fn clock_change(&mut self,params:&ClockParams)-> bool{
+        if !self.change_clock {
+            let clock_match = (params.clocklist.get() >> self.current_clock) & 0b1 == 1;
+            let freq_match = self.frequency_check(self.current_clock,
+                params.max_frequency.get(), params.min_frequency.get());
+
+            if clock_match && freq_match {
+                return false;
+            }
+        }
+
         self.change_clock=true;
         if self.lock_count == 0 {
-            self.change_clock = false;
             //locking prevents interrupts from causing nested clock_change
             self.lock_count += 1;
             self.update_clock();
             self.lock_count -= 1;
         }
+        return true;
     }
 }
 pub static mut CM: ImixClockManager = ImixClockManager {
