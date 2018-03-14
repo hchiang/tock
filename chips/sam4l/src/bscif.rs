@@ -63,6 +63,7 @@ pub unsafe fn enable_rc32k() {
     (*BSCIF).unlock.set(0xAA000028);
     // Write the BSCIF::RC32KTUNE register
     (*BSCIF).rc32ktune.set(0x001d0015);
+
 }
 
 pub unsafe fn rc32k_enabled() -> bool {
@@ -87,7 +88,7 @@ pub unsafe fn setup_rc_1mhz() {
     (*BSCIF).rc1mcr.set(bscif_rc1mcr | (1 << 0));
     
     // Wait for it to be ready
-    while (*BSCIF).pclksr.get() & (1 << 11) == 0 {}
+    while (*BSCIF).rc1mcr.get() & (1 << 0) == 0 {}
 }
 
 pub unsafe fn disable_rc_1mhz() {
