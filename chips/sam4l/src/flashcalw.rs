@@ -322,6 +322,10 @@ impl<'a> FLASHCALW<'a> {
             });
         }
 
+        self.match_state();
+    }
+
+    pub fn match_state(&self) {
         // Part of a command succeeded -- continue onto next steps.
         match self.current_state.get() {
             FlashState::Read => {
@@ -989,7 +993,7 @@ impl<'a> hil::clock_pm::ClockClient<'a> for FLASHCALW<'a> {
 
             match self.current_state.get() {
                 FlashState::Read => self.callback_read_range(),
-                FlashState::WriteUnlocking {..} | FlashState::EraseUnlocking {..} => self.handle_interrupt(),
+                FlashState::WriteUnlocking {..} | FlashState::EraseUnlocking {..} => self.match_state(),
                 _ => {} 
             }
         }

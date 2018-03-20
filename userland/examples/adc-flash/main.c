@@ -1,18 +1,26 @@
 #include <stdio.h>
 #include <timer.h>
-//#include <internal/nonvolatile_storage.h>
+#include <internal/nonvolatile_storage.h>
 #include <adc.h>
 
 uint8_t writebuf[256];
 
 bool done = false;
+bool timer_done = false;
 
 static void write_done(int length,
                        __attribute__ ((unused)) int arg1,
                        __attribute__ ((unused)) int arg2,
                        __attribute__ ((unused)) void* ud) {
-    printf("Finished write! %i\n", length);
     done = true;
+}
+
+// callback for timers
+static void timer_cb (__attribute__ ((unused)) int arg0,
+                      __attribute__ ((unused)) int arg1,
+                      __attribute__ ((unused)) int arg2,
+                      __attribute__ ((unused)) void* userdata) {
+    timer_done = true;
 }
 
 int main(void) {
@@ -26,10 +34,13 @@ int main(void) {
     ret = nonvolatile_storage_internal_write_done_subscribe(write_done, NULL);
     if (ret != 0) printf("ERROR setting write done callback\n");
     
+    // Timer 
+    tock_timer_t timer;
+    timer_every(1000, timer_cb, NULL, &timer);
 
     uint8_t channel = 0;
-    uint32_t freq = 150000;
-    uint32_t length = 10;
+    uint32_t freq = 300000;
+    uint32_t length = 100;
     uint16_t buf[length];
 
     while(1){
@@ -40,13 +51,13 @@ int main(void) {
             printf("Error sampling ADC: %d\n", err);
         }
         else {
-            printf("\t[ ");
+            //printf("\t[ ");
             for (uint32_t i = 0; i < length; i++) {
                 // convert to millivolts
                 writebuf[i] = (buf[i] * 3300) / 4095;
-                printf("%u ", writebuf[i]);
+               // printf("%u ", writebuf[i]);
             }
-            printf("]\n ");
+            //printf("]\n ");
         }
         
         // Write to flash
@@ -55,9 +66,8 @@ int main(void) {
         if (ret != 0) printf("ERROR calling write\n");
         yield_for(&done);
 
-        //Can't use timer_every because undefined behavior can occur if
-        // flash is serviced through interrupts (pg. 265)
-        delay_ms(1000);
+        yield_for(&timer_done);
+        timer_done = false;
     }
 
 }

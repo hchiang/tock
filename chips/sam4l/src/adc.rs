@@ -760,7 +760,7 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
             // only one sample at a time
             (ReturnCode::EBUSY, Some(buffer))
 
-        } else if frequency <= (self.adc_clk_freq.get() / (0xFFFF + 1)) || frequency > 250000 {
+        } else if frequency <= (self.adc_clk_freq.get() / (0xFFFF + 1)) || frequency > 300000 {
             // can't sample faster than the max sampling frequency or slower
             // than the timer can be set to
             (ReturnCode::EINVAL, Some(buffer))
@@ -831,7 +831,7 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
             // only one sample at a time
             (ReturnCode::EBUSY, Some(buffer1), Some(buffer2))
 
-        } else if frequency <= (self.adc_clk_freq.get() / (0xFFFF + 1)) || frequency > 250000 {
+        } else if frequency <= (self.adc_clk_freq.get() / (0xFFFF + 1)) || frequency > 300000 {
             // can't sample faster than the max sampling frequency or slower
             // than the timer can be set to
             (ReturnCode::EINVAL, Some(buffer1), Some(buffer2))
