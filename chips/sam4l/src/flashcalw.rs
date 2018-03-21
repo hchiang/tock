@@ -331,18 +331,18 @@ impl<'a> FLASHCALW<'a> {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
+                self.client.get().map(|client| {
+                    self.buffer.take().map(|buffer| {
+                        client.read_complete(buffer, hil::flash::Error::CommandComplete);
+                    });
+                });
+
                 if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
                     }                
                 }
-
-                self.client.get().map(|client| {
-                    self.buffer.take().map(|buffer| {
-                        client.read_complete(buffer, hil::flash::Error::CommandComplete);
-                    });
-                });
             }
             FlashState::WriteUnlocking { page } => {
                 if self.cm_enabled.get() && !self.has_lock.get() {
@@ -376,18 +376,18 @@ impl<'a> FLASHCALW<'a> {
 
                 self.current_state.set(FlashState::Ready);
 
+                self.client.get().map(|client| {
+                    self.buffer.take().map(|buffer| {
+                        client.write_complete(buffer, hil::flash::Error::CommandComplete);
+                    });
+                });
+
                 if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
                     }                
                 }
-
-                self.client.get().map(|client| {
-                    self.buffer.take().map(|buffer| {
-                        client.write_complete(buffer, hil::flash::Error::CommandComplete);
-                    });
-                });
             }
             FlashState::EraseUnlocking { page } => {
                 if self.cm_enabled.get() && !self.has_lock.get() {
@@ -407,16 +407,16 @@ impl<'a> FLASHCALW<'a> {
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
 
+                self.client
+                    .get()
+                    .map(|client| { client.erase_complete(hil::flash::Error::CommandComplete); });
+
                 if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
                     }                
                 }
-
-                self.client
-                    .get()
-                    .map(|client| { client.erase_complete(hil::flash::Error::CommandComplete); });
             }
             _ => {
                 self.current_state.set(FlashState::Ready);
