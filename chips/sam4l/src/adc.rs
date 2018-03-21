@@ -730,12 +730,6 @@ impl<'a> hil::adc::Adc for Adc<'a> {
                 self.stopped_buffer.replace(buf);
             });
 
-            if self.cm_enabled.get() && self.has_lock.get() {
-                self.has_lock.set(false);
-                unsafe {
-                    clock_pm::CM.unlock();
-                }
-            }
             self.disable();
 
             ReturnCode::SUCCESS
@@ -1044,6 +1038,13 @@ impl<'a> dma::DMAClient for Adc<'a> {
                     client.samples_ready(buf, length);
                 });
             });
+
+            if self.has_lock.get() {
+                self.has_lock.set(false);
+                unsafe {
+                    clock_pm::CM.unlock();
+                }
+            }
         }
     }
 }
