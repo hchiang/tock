@@ -210,7 +210,8 @@ unsafe fn set_pin_primary_functions() {
 pub unsafe fn reset_handler() {
     sam4l::init();
 
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::ExternalOscillator {
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
         frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
         startup_mode: sam4l::pm::OscillatorStartup::FastStart,
     });
@@ -326,7 +327,7 @@ pub unsafe fn reset_handler() {
     sam4l::spi::SPI.set_client(mux_spi);
     sam4l::spi::SPI.init();
     sam4l::spi::SPI.enable();
-    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
 
     // Create a virtualized client for SPI system call interface,
     // then the system call capsule
@@ -436,7 +437,7 @@ pub unsafe fn reset_handler() {
         )
     );
     sam4l::adc::ADC0.set_client(adc);
-    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
 
     // # GPIO
     // set GPIO driver controlling remaining GPIO pins
@@ -582,7 +583,7 @@ pub unsafe fn reset_handler() {
             &mut sam4l::flashcalw::FLASH_CONTROLLER,
             &mut FLASH_PAGEBUFFER));
     hil::flash::HasClient::set_client(&sam4l::flashcalw::FLASH_CONTROLLER, nv_to_page);
-    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+    //sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let flash_driver = static_init!(
         capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,

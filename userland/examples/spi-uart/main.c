@@ -36,10 +36,11 @@ int main(void) {
       wbuf[i] = i;
     }
     spi_set_chip_select(0);
-    spi_set_rate(16000000);
+    spi_set_rate(400000);
     spi_set_polarity(false);
     spi_set_phase(false);
 
+/*
     //setup interrupt callback 
     gpio_interrupt_callback(gpio_cb,NULL);
     gpio_enable_input(0,PullDown);
@@ -59,8 +60,9 @@ int main(void) {
         receive = false;
 
         if strcmp(receive_buf,"Start") {
+*/
             spi_read_write(wbuf, rbuf, BUF_SIZE, write_cb, NULL);
-        }
+//        }
+//    }
 
-    }
 }

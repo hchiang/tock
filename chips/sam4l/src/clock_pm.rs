@@ -1,7 +1,5 @@
 use kernel::hil::clock_pm::{ClockManager,ClockClient,ClockParams};
 //use core::cell::Cell;
-use core::u32::MAX;
-use core::u32::MIN;
 use core::cmp;
 use pm;
 use kernel::common::List;
@@ -22,8 +20,8 @@ impl<'a> ImixClockManager<'a> {
         //Assume there will always be a clock that works for all peripherals
 
         let mut clockmask : u32 = 0xffffffff;
-        let mut max_freq : u32 = MAX;
-        let mut min_freq : u32 = MIN;
+        let mut max_freq : u32 = 48000000;
+        let mut min_freq : u32 = 0;
 
         for client in self.clients.iter() {
             let param = client.get_params();
@@ -38,7 +36,8 @@ impl<'a> ImixClockManager<'a> {
         }
 
         for i in 0..NUM_CLOCK_SOURCES {
-            if ((clockmask >> i) & 0b1 == 1) && self.frequency_check(i as u32,max_freq,min_freq) {
+            if (clockmask >> i) & 0b1 == 1{
+            //if ((clockmask >> i) & 0b1 == 1) && self.frequency_check(i as u32,max_freq,min_freq) {
                 return i as u32;
             } 
         }
@@ -84,11 +83,9 @@ impl<'a> ImixClockManager<'a> {
 
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
-            debug_gpio!(0,set);
             unsafe {
                 pm::PM.change_system_clock(system_clock);
             }
-            debug_gpio!(0,clear);
         }
 
         for client in self.clients.iter() {

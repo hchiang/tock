@@ -235,8 +235,9 @@ impl<'a> Spi<'a> {
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
             has_lock: Cell::new(false),
-            //TODO: spi doesn't work with RC1M or RCFAST
-            clock_params: ClockParams::new(0x000001ff, 0, 48000000),
+            //TODO: spi doesn't work with RC1M, RCFAST, or EXTOSC
+            // works for RC80M, DFLL, PLL
+            clock_params: ClockParams::new(0x000001c0, 0, 48000000),
             next: ListLink::empty(),
         }
     }
@@ -309,9 +310,9 @@ impl<'a> Spi<'a> {
         let mut real_rate = rate;
         let clock = pm::get_system_frequency();
 
+        //TODO rate appears to be 100000 when set to 400000
         self.baud_rate.set(rate);
         self.clock_params.min_frequency.set(rate);
-        //TODO: bus clock could be further divided?
         self.clock_params.max_frequency.set(rate*255);
 
         if real_rate < 188235 {
@@ -481,11 +482,17 @@ impl<'a> Spi<'a> {
 
         self.callback_len.set(count);
         match read_buffer {
-            Some(buf) => self.callback_read_buffer.put(Some(buf)),
+            Some(buf) => {
+                self.callback_read_buffer.put(Some(buf));
+                self.transfers_in_progress.set(self.transfers_in_progress.get() + 1);
+            }
             None => self.callback_read_buffer.put(None),
         }
         match write_buffer {
-            Some(buf) => self.callback_write_buffer.put(Some(buf)),
+            Some(buf) => {
+                self.callback_write_buffer.put(Some(buf));
+                self.transfers_in_progress.set(self.transfers_in_progress.get() + 1);
+            }
             None => self.callback_write_buffer.put(None),
         }
 
@@ -511,7 +518,6 @@ impl<'a> Spi<'a> {
         // For transfers 4 bytes or longer, this will work as expected.
         // For shorter transfers, the first byte will be missing.
         self.callback_write_buffer.take().map(|wbuf| {
-            self.transfers_in_progress.set(self.transfers_in_progress.get() + 1);
             self.dma_write.get().map(move |write| {
                 write.enable();
                 write.do_xfer(DMAPeripheral::SPI_TX, wbuf, self.callback_len.get());
@@ -521,7 +527,6 @@ impl<'a> Spi<'a> {
         // Only setup the RX channel if we were passed a read_buffer inside
         // of the option. `map()` checks this for us.
         self.callback_read_buffer.take().map(|rbuf| {
-            self.transfers_in_progress.set(self.transfers_in_progress.get() + 1);
             self.dma_read.get().map(move |read| {
                 read.enable();
                 read.do_xfer(DMAPeripheral::SPI_RX, rbuf, self.callback_len.get());
@@ -720,6 +725,14 @@ impl<'a> DMAClient for Spi<'a> {
             let len = self.dma_length.get();
             self.dma_length.set(0);
 
+            if self.cm_enabled.get() && self.has_lock.get() {
+                debug_gpio!(0,clear);
+                self.has_lock.set(false);
+                unsafe {
+                    clock_pm::CM.unlock();
+                }
+            }
+
             match self.role.get() {
                 SpiRole::SpiMaster => {
                     self.client.get().map(|cb| {
@@ -735,12 +748,6 @@ impl<'a> DMAClient for Spi<'a> {
                 }
             }
 
-            if self.cm_enabled.get() && self.has_lock.get() {
-                self.has_lock.set(false);
-                unsafe {
-                    clock_pm::CM.unlock();
-                }
-            }
         }
     }
 }
@@ -757,6 +764,7 @@ impl<'a> ClockClient<'a> for Spi<'a> {
 
         if self.return_params.get() {
             if !self.has_lock.get() {
+                debug_gpio!(0,set);
                 unsafe {
                     self.has_lock.set(clock_pm::CM.lock()); 
                 }
