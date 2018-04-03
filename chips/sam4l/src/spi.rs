@@ -236,6 +236,7 @@ impl<'a> Spi<'a> {
             return_params: Cell::new(false),
             has_lock: Cell::new(false),
             //TODO: spi doesn't work with RC1M, RCFAST, or EXTOSC
+            // spi should work with EXTOSC
             // works for RC80M, DFLL, PLL
             clock_params: ClockParams::new(0x000001c0, 0, 48000000),
             next: ListLink::empty(),
@@ -270,12 +271,14 @@ impl<'a> Spi<'a> {
         // Disable loopback
         regs.mr.modify(mode + Mode::MODFDIS::SET
                             + Mode::LLB::CLEAR);
+
+        self.disable_clock();
     }
 
     pub fn enable(&self) {
         let regs: &Registers = unsafe { &*self.registers };
-
         self.enable_clock();
+
         regs.cr.write(Control::SPIEN::SET);
 
         if self.role.get() == SpiRole::SpiSlave {
@@ -293,6 +296,7 @@ impl<'a> Spi<'a> {
         if self.role.get() == SpiRole::SpiSlave {
             regs.idr.write(InterruptFlags::NSSR::SET);; // Disable NSSR
         }
+        self.disable_clock();
     }
 
     /// Sets the approximate baud rate for the active peripheral,
@@ -306,6 +310,7 @@ impl<'a> Spi<'a> {
     /// The lowest available baud rate is 188235 baud. If the
     /// requested rate is lower, 188235 baud will be selected.
     pub fn set_baud_rate(&self, rate: u32) -> u32 {
+        
         // Main clock frequency
         let mut real_rate = rate;
         let clock = pm::get_system_frequency();
@@ -436,6 +441,12 @@ impl<'a> Spi<'a> {
         }
     }
 
+    fn disable_clock(&self) {
+        unsafe {
+            pm::disable_clock(pm::Clock::PBA(pm::PBAClock::SPI));
+        }
+    }
+
     pub fn handle_interrupt(&self) {
         let regs: &Registers = unsafe { &*self.registers };
 
@@ -513,6 +524,7 @@ impl<'a> Spi<'a> {
     }
 
     fn read_write_callback(&self) {
+
 
         // The ordering of these operations matters.
         // For transfers 4 bytes or longer, this will work as expected.
@@ -725,13 +737,14 @@ impl<'a> DMAClient for Spi<'a> {
             let len = self.dma_length.get();
             self.dma_length.set(0);
 
+
             if self.cm_enabled.get() && self.has_lock.get() {
-                debug_gpio!(0,clear);
                 self.has_lock.set(false);
                 unsafe {
                     clock_pm::CM.unlock();
                 }
             }
+            self.disable();
 
             match self.role.get() {
                 SpiRole::SpiMaster => {
@@ -747,7 +760,6 @@ impl<'a> DMAClient for Spi<'a> {
                     });
                 }
             }
-
         }
     }
 }
@@ -764,7 +776,6 @@ impl<'a> ClockClient<'a> for Spi<'a> {
 
         if self.return_params.get() {
             if !self.has_lock.get() {
-                debug_gpio!(0,set);
                 unsafe {
                     self.has_lock.set(clock_pm::CM.lock()); 
                 }

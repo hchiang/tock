@@ -1042,6 +1042,7 @@ impl<'a> hil::clock_pm::ClockClient<'a> for USART<'a> {
         if clock_changed {
             self.reset();
             self.set_baud_rate(self.baud_rate.get());
+            self.disable_clock() 
         }
 
         if self.return_params.get() {
