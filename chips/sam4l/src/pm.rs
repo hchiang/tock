@@ -359,7 +359,6 @@ impl PowerManager {
             }
 
             SystemClockSource::DfllRc32kAt48MHz => {
-                //TODO: RCFAST doesn't always work after switching from DFLL
                 scif::disable_dfll_rc32k();
                 let clock_mask = self.system_on_clocks.get();
                 self.system_on_clocks.set(clock_mask & !(1 << 6));
@@ -614,25 +613,25 @@ pub fn get_system_frequency() -> u32 {
     unsafe { PM.system_frequency.get() }
 }
 
-pub fn get_clock_frequency(clock_source: SystemClockSource) -> u32 {
-    let freq = match clock_source {
-        SystemClockSource::RcsysAt115kHz => 115200,
-        SystemClockSource::ExternalOscillator { frequency, startup_mode } => 16000000,
-        SystemClockSource::PllExternalOscillatorAt48MHz { frequency, startup_mode } => 48000000,
-        SystemClockSource::DfllRc32kAt48MHz => 48000000,
-        SystemClockSource::RC80M => 40000000,
-        SystemClockSource::RCFAST {frequency} => {
-            match frequency {
-                RcfastFrequency::Frequency4MHz => 4300000,
-                RcfastFrequency::Frequency8MHz => 8200000,
-                RcfastFrequency::Frequency12MHz => 12000000,
-            }
-        }
-        SystemClockSource::RC1M => 1000000,
-    };
-    freq
-    
-}
+//pub fn get_clock_frequency(clock_source: SystemClockSource) -> u32 {
+//    let freq = match clock_source {
+//        SystemClockSource::RcsysAt115kHz => 115200,
+//        SystemClockSource::ExternalOscillator { frequency, startup_mode } => 16000000,
+//        SystemClockSource::PllExternalOscillatorAt48MHz { frequency, startup_mode } => 48000000,
+//        SystemClockSource::DfllRc32kAt48MHz => 48000000,
+//        SystemClockSource::RC80M => 40000000,
+//        SystemClockSource::RCFAST {frequency} => {
+//            match frequency {
+//                RcfastFrequency::Frequency4MHz => 4300000,
+//                RcfastFrequency::Frequency8MHz => 8200000,
+//                RcfastFrequency::Frequency12MHz => 12000000,
+//            }
+//        }
+//        SystemClockSource::RC1M => 1000000,
+//    };
+//    freq
+//    
+//}
 
 /// Utility macro to modify clock mask registers
 ///

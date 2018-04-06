@@ -67,9 +67,9 @@ impl Default for App {
 /// The size is chosen somewhat arbitrarily, but has been tested. At 175000 Hz,
 /// buffers need to be swapped every 70 us and copied over before the next
 /// swap. In testing, it seems to keep up fine.
-pub static mut ADC_BUFFER1: [u16; 128] = [0; 128];
-pub static mut ADC_BUFFER2: [u16; 128] = [0; 128];
-pub static mut ADC_BUFFER3: [u16; 128] = [0; 128];
+pub static mut ADC_BUFFER1: [u16; 512] = [0; 512];
+pub static mut ADC_BUFFER2: [u16; 512] = [0; 512];
+pub static mut ADC_BUFFER3: [u16; 512] = [0; 512];
 
 /// Functions to create, initialize, and interact with the ADC
 impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed + 'a> Adc<'a, A> {
@@ -81,9 +81,9 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed + 'a> Adc<'a, A> {
     /// adc_buf2 - second buffer used when continuously sampling ADC
     pub fn new(adc: &'a A,
                channels: &'a [&'a <A as hil::adc::Adc>::Channel],
-               adc_buf1: &'static mut [u16; 128],
-               adc_buf2: &'static mut [u16; 128],
-               adc_buf3: &'static mut [u16; 128])
+               adc_buf1: &'static mut [u16; 512],
+               adc_buf2: &'static mut [u16; 512],
+               adc_buf3: &'static mut [u16; 512])
                -> Adc<'a, A> {
         Adc {
             // ADC driver
