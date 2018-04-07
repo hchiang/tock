@@ -100,6 +100,9 @@ pub unsafe fn set_power_scaling(ps_value: PowerScaling) {
     // Request power scaling change
     control |= 0x4; // PSCREQ
 
+    // Set power save mode to Wait
+    control &= !(0x3 << 8); 
+
     // Unlock PMCON register
     unlock_register(0x1c); // Control
 

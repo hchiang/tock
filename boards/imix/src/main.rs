@@ -15,7 +15,6 @@ use capsules::virtual_spi::{MuxSpiMaster, VirtualSpiMasterDevice};
 use kernel::hil;
 use kernel::hil::Controller;
 use kernel::hil::spi::SpiMaster;
-use kernel::hil::clock_pm::ClockManager;
 
 #[macro_use]
 pub mod io;
@@ -40,9 +39,9 @@ static mut APP_MEMORY: [u8; 16384] = [0; 16384];
 static mut PROCESSES: [Option<kernel::Process<'static>>; NUM_PROCS] = [None, None];
 
 struct Imix {
-    console: &'static capsules::console::Console<'static, sam4l::usart::USART<'static>>,
-    spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi<'static>>>,
-    adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc<'static>>,
+    console: &'static capsules::console::Console<'static, sam4l::usart::USART>,
+    spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>,
+    adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc>,
     flash_driver: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
     ipc: kernel::ipc::IPC,
@@ -136,32 +135,32 @@ unsafe fn set_pin_primary_functions() {
 pub unsafe fn reset_handler() {
     sam4l::init();
 
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::RCFAST{
+        frequency: sam4l::pm::RcfastFrequency::Frequency12MHz});
     //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32kAt48MHz);
     //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::ExternalOscillator{
-        frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
-        startup_mode: sam4l::pm::OscillatorStartup::FastStart,
-    });
+    //    frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
+    //    startup_mode: sam4l::pm::OscillatorStartup::FastStart,
+    //});
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
 
-    //set_pin_primary_functions();
-
-    //kernel::debug::assign_gpios(Some(&sam4l::gpio::PC[26]),
-    //                            Some(&sam4l::gpio::PC[27]),
-    //                            Some(&sam4l::gpio::PC[28]));
-    //debug_gpio!(0, make_output);
-    //debug_gpio!(0, clear);
-    //debug_gpio!(1, make_output);
-    //debug_gpio!(1, clear);
-    //debug_gpio!(2, make_output);
-    //debug_gpio!(2, clear);
+    set_pin_primary_functions();
+    kernel::debug::assign_gpios(Some(&sam4l::gpio::PC[26]),
+                                Some(&sam4l::gpio::PC[27]),
+                                Some(&sam4l::gpio::PC[28]));
+    debug_gpio!(0, make_output);
+    debug_gpio!(0, clear);
+    debug_gpio!(1, make_output);
+    debug_gpio!(1, clear);
+    debug_gpio!(2, make_output);
+    debug_gpio!(2, clear);
 
     // # CONSOLE
 
     let console = static_init!(
-        capsules::console::Console<sam4l::usart::USART<'static>>,
+        capsules::console::Console<sam4l::usart::USART>,
         capsules::console::Console::new(
             &sam4l::usart::USART3,
             115200,
@@ -172,7 +171,6 @@ pub unsafe fn reset_handler() {
     );
     hil::uart::UART::set_client(&sam4l::usart::USART3, console);
     // Debug statments have to occur after register or no output
-    //sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
     console.initialize();
 
     // Attach the kernel debug interface to this console
@@ -222,28 +220,26 @@ pub unsafe fn reset_handler() {
         )
     );
     sam4l::adc::ADC0.set_client(adc);
-    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
 
     // Set up an SPI MUX, so there can be multiple clients
     let mux_spi = static_init!(
-        MuxSpiMaster<'static, sam4l::spi::Spi<'static>>,
+        MuxSpiMaster<'static, sam4l::spi::Spi>,
         MuxSpiMaster::new(&sam4l::spi::SPI)
     );
     sam4l::spi::SPI.set_client(mux_spi);
     sam4l::spi::SPI.init();
     //sam4l::spi::SPI.enable();
-    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
 
     // Create a virtualized client for SPI system call interface,
     // then the system call capsule
     let syscall_spi_device = static_init!(
-        VirtualSpiMasterDevice<'static, sam4l::spi::Spi<'static>>,
+        VirtualSpiMasterDevice<'static, sam4l::spi::Spi>,
         VirtualSpiMasterDevice::new(mux_spi, 3)
     );
 
     // Create the SPI systemc call capsule, passing the client
     let spi_syscalls = static_init!(
-        capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi<'static>>>,
+        capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi>>,
         capsules::spi::Spi::new(syscall_spi_device)
     );
 

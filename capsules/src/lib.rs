@@ -53,4 +53,5 @@ pub mod ieee802154;
 pub mod temperature;
 pub mod humidity;
 pub mod aes_ccm;
+pub mod clock_pm;
 //pub mod nrf_internal_temp_sensor;
