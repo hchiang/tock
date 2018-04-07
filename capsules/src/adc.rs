@@ -245,10 +245,10 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed + 'a> Adc<'a, A> {
         }
 
         // always initialize. Initialization will be skipped if already complete
-        let res = self.initialize();
-        if res != ReturnCode::SUCCESS {
-            return res;
-        }
+        //let res = self.initialize();
+        //if res != ReturnCode::SUCCESS {
+        //    return res;
+        //}
 
         // convert channel index
         if channel >= self.channels.len() {

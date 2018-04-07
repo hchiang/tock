@@ -63,7 +63,6 @@ type RF233Device =
 
 struct Imix {
     console: &'static capsules::console::Console<'static, sam4l::usart::USART<'static>>,
-    gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
     spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::Spi<'static>>>,
     adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc<'static>>,
     flash_driver: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
@@ -71,6 +70,7 @@ struct Imix {
     ipc: kernel::ipc::IPC,
 /*
     temp: &'static capsules::temperature::TemperatureSensor<'static>,
+    gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
     humidity: &'static capsules::humidity::HumiditySensor<'static>,
     ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
     led: &'static capsules::led::LED<'static, sam4l::gpio::GPIOPin>,
@@ -121,7 +121,6 @@ impl kernel::Platform for Imix {
     {
         match driver_num {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
-            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules::spi::DRIVER_NUM => f(Some(self.spi)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
@@ -129,6 +128,7 @@ impl kernel::Platform for Imix {
             27 => f(Some(self.flash_driver)),
             _ => f(None),
 /*            capsules::led::DRIVER_NUM => f(Some(self.led)),
+            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
@@ -214,25 +214,27 @@ unsafe fn set_pin_primary_functions() {
 pub unsafe fn reset_handler() {
     sam4l::init();
 
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
-        frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
-        startup_mode: sam4l::pm::OscillatorStartup::FastStart,
-    });
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32kAt48MHz);
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+    //    frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
+    //    startup_mode: sam4l::pm::OscillatorStartup::FastStart,
+    //});
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
 
-    set_pin_primary_functions();
-/*
-    power::configure_submodules(power::SubmoduleConfig {
-        rf233: true,
-        nrf51422: true,
-        sensors: true,
-        trng: true,
-    });
-*/
+    //set_pin_primary_functions();
 
-    kernel::debug::assign_gpios(Some(&sam4l::gpio::PC[26]),
+    /*
+    power::configure_submodules(power::SubmoduleConfig {
+        rf233: false,
+        nrf51422: false,
+        sensors: false,
+        trng: false,
+    });
+    */
+
+    /*kernel::debug::assign_gpios(Some(&sam4l::gpio::PC[26]),
                                 Some(&sam4l::gpio::PC[27]),
                                 Some(&sam4l::gpio::PC[28]));
     debug_gpio!(0, make_output);
@@ -241,6 +243,7 @@ pub unsafe fn reset_handler() {
     debug_gpio!(1, clear);
     debug_gpio!(2, make_output);
     debug_gpio!(2, clear);
+    */
 
     // # CONSOLE
 
@@ -255,10 +258,9 @@ pub unsafe fn reset_handler() {
         )
     );
     hil::uart::UART::set_client(&sam4l::usart::USART3, console);
-    console.initialize();
-
     // Debug statments have to occur after register or no output
     sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
+    console.initialize();
 
     // Attach the kernel debug interface to this console
     let kc = static_init!(capsules::console::App, capsules::console::App::default());
@@ -309,29 +311,6 @@ pub unsafe fn reset_handler() {
     sam4l::adc::ADC0.set_client(adc);
     sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
 
-    // # GPIO
-    // set GPIO driver controlling remaining GPIO pins
-    let gpio_pins = static_init!(
-        [&'static sam4l::gpio::GPIOPin; 7],
-        [
-            &sam4l::gpio::PC[31], // P2
-            &sam4l::gpio::PC[30], // P3
-            &sam4l::gpio::PC[29], // P4
-            &sam4l::gpio::PC[28], // P5
-            &sam4l::gpio::PC[27], // P6
-            &sam4l::gpio::PC[26], // P7
-            &sam4l::gpio::PA[20]  // P8
-        ]
-    );
-
-    let gpio = static_init!(
-        capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
-        capsules::gpio::GPIO::new(gpio_pins)
-    );
-    for pin in gpio_pins.iter() {
-        pin.set_client(gpio);
-    }
-
     // Set up an SPI MUX, so there can be multiple clients
     let mux_spi = static_init!(
         MuxSpiMaster<'static, sam4l::spi::Spi<'static>>,
@@ -339,7 +318,7 @@ pub unsafe fn reset_handler() {
     );
     sam4l::spi::SPI.set_client(mux_spi);
     sam4l::spi::SPI.init();
-    sam4l::spi::SPI.enable();
+    //sam4l::spi::SPI.enable();
     sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
 
     // Create a virtualized client for SPI system call interface,
@@ -363,6 +342,29 @@ pub unsafe fn reset_handler() {
     syscall_spi_device.set_client(spi_syscalls);
 
 /*
+    // # GPIO
+    // set GPIO driver controlling remaining GPIO pins
+    let gpio_pins = static_init!(
+        [&'static sam4l::gpio::GPIOPin; 7],
+        [
+            &sam4l::gpio::PC[31], // P2
+            &sam4l::gpio::PC[30], // P3
+            &sam4l::gpio::PC[29], // P4
+            &sam4l::gpio::PC[28], // P5
+            &sam4l::gpio::PC[27], // P6
+            &sam4l::gpio::PC[26], // P7
+            &sam4l::gpio::PA[20]  // P8
+        ]
+    );
+
+    let gpio = static_init!(
+        capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
+        capsules::gpio::GPIO::new(gpio_pins)
+    );
+    for pin in gpio_pins.iter() {
+        pin.set_client(gpio);
+    }
+
     // Create the Nrf51822Serialization driver for passing BLE commands
     // over UART to the nRF51822 radio.
     let nrf_serialization = static_init!(
@@ -582,6 +584,7 @@ pub unsafe fn reset_handler() {
         capsules::usb_user::UsbSyscallDriver::new(usb_client, kernel::Grant::create())
     );
 */
+
     pub static mut FLASH_PAGEBUFFER: sam4l::flashcalw::Sam4lPage = sam4l::flashcalw::Sam4lPage::new();
     let nv_to_page = static_init!(
         capsules::nonvolatile_to_pages::NonvolatileToPages<'static, sam4l::flashcalw::FLASHCALW>,
@@ -605,12 +608,12 @@ pub unsafe fn reset_handler() {
     let imix = Imix {
         console: console,
         alarm: alarm,
-        gpio: gpio,
         adc: adc,
         spi: spi_syscalls,
         flash_driver: flash_driver,
         ipc: kernel::ipc::IPC::new(),
   /*      temp: temp,
+        gpio: gpio,
         humidity: humidity,
         ambient_light: ambient_light,
         led: led,

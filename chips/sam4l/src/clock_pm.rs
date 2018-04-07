@@ -2,7 +2,6 @@ use kernel::hil::clock_pm::{ClockManager,ClockClient,ClockParams};
 //use core::cell::Cell;
 use pm;
 use kernel::common::List;
-#[macro_use(debug_gpio)]
 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
 
