@@ -220,7 +220,7 @@ impl<'a> Adc<'a> {
             // clock manager
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x000001fc, 0, 48000000),
+            clock_params: ClockParams::new(0x00000110, 0, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
         }
@@ -289,7 +289,16 @@ impl<'a> Adc<'a> {
 
     // Disables the adc
     fn disable(&self) -> ReturnCode {
+        //TODO: adc causes powerdraw in deepsleep
         let regs: &AdcRegisters = unsafe { &*self.registers };
+
+        //Ensure ADC is idle
+        let mut cfg = regs.seqcfg.get();
+        cfg &= !(7 << 8);
+        regs.seqcfg.set(cfg);
+
+        while regs.sr.get() & (0x1 << 26) == (0x1 << 26) {}
+
         // disable ADC
         regs.cr.set(1 << 9);
 
@@ -304,6 +313,7 @@ impl<'a> Adc<'a> {
         }
 
         self.enabled.set(false);
+        scif::generic_clock_disable(scif::GenericClock::GCLK10);
         unsafe {
             pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
         }
@@ -444,6 +454,9 @@ impl<'a> Adc<'a> {
         if res != ReturnCode::SUCCESS {
             return;
         }
+        if !self.enabled.get() {
+            return;
+        }
 
         self.active.set(true);
         self.continuous.set(true);
@@ -522,7 +535,8 @@ impl<'a> hil::adc::Adc for Adc<'a> {
     /// This can be called multiple times with no side effects.
     fn initialize(&self) -> ReturnCode {
         // always configure to 1KHz to get the slowest clock
-        self.config_and_enable(1000)
+        //self.config_and_enable(1000)
+        ReturnCode::SUCCESS
     }
 
     /// Capture a single analog sample, calling the client when complete.
@@ -709,6 +723,15 @@ impl<'a> hil::adc::Adc for Adc<'a> {
             // reset the ADC peripheral
             regs.cr.set(0x01);
 
+            self.disable();
+
+            if self.has_lock.get() {
+                self.has_lock.set(false);
+                unsafe {
+                    clock_pm::CM.unlock();
+                }
+            }
+
             // stop DMA transfer if going. This should safely return a None if
             // the DMA was not being used
             let dma_buffer = self.rx_dma.get().map_or(None, |rx_dma| {
@@ -730,8 +753,6 @@ impl<'a> hil::adc::Adc for Adc<'a> {
                 self.stopped_buffer.replace(buf);
             });
 
-            self.disable();
-
             ReturnCode::SUCCESS
         }
     }
@@ -747,10 +768,7 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
                         length: usize)
                         -> (ReturnCode, Option<&'static mut [u16]>) {
 
-        if !self.enabled.get() {
-            (ReturnCode::EOFF, Some(buffer))
-
-        } else if self.active.get() {
+        if self.active.get() {
             // only one sample at a time
             (ReturnCode::EBUSY, Some(buffer))
 
@@ -775,12 +793,14 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
             if self.cm_enabled.get() && !self.has_lock.get() {
                 self.return_params.set(true);
                 self.clock_params.min_frequency.set(frequency*32);
-                let mut need_clock_change =false;
                 unsafe {
-                    need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-                }
-                if !need_clock_change {
-                    self.clock_updated(false);
+                    if clock_pm::CM.need_clock_change(&self.clock_params){
+                        self.disable();
+                        clock_pm::CM.clock_change();
+                    }
+                    else {
+                        self.clock_updated(false);
+                    }
                 }
             }
             else {
@@ -1038,13 +1058,6 @@ impl<'a> dma::DMAClient for Adc<'a> {
                     client.samples_ready(buf, length);
                 });
             });
-
-            if self.has_lock.get() {
-                self.has_lock.set(false);
-                unsafe {
-                    clock_pm::CM.unlock();
-                }
-            }
         }
     }
 }

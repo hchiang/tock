@@ -168,7 +168,7 @@ impl<'a> USART<'a> {
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
             //PLL-> ExtOsc, RCFAST, RC1M
-            clock_params: ClockParams::new(0x000001ff, 0, 48000000),
+            clock_params: ClockParams::new(0x000001fc, 0, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
 
@@ -498,6 +498,14 @@ impl<'a> dma::DMAClient for USART<'a>{
                     self.disable_rx();
                     self.usart_rx_state.set(USARTStateRX::Idle);
 
+                    self.callback_rx_len.set(0);
+                    if self.cm_enabled.get() && self.has_lock.get() && self.callback_tx_len.get() == 0 {
+                        self.has_lock.set(false);
+                        unsafe {
+                            clock_pm::CM.unlock();
+                        }
+                    }
+
                     // get buffer
                     let buffer = self.rx_dma.get().map_or(None, |rx_dma| {
                         let buf = rx_dma.abort_xfer();
@@ -520,14 +528,6 @@ impl<'a> dma::DMAClient for USART<'a>{
                         });
                     });
                     self.rx_len.set(0);
-
-                    self.callback_rx_len.set(0);
-                    if self.cm_enabled.get() && self.has_lock.get() && self.callback_tx_len.get() == 0 {
-                        self.has_lock.set(false);
-                        unsafe {
-                            clock_pm::CM.unlock();
-                        }
-                    }
 
                 } else if pid == self.tx_dma_peripheral {
                     // TX transfer was completed
@@ -683,12 +683,13 @@ impl<'a> hil::uart::UART for USART<'a> {
         self.callback_tx_len.set(tx_len);
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
-            let mut need_clock_change = false;
             unsafe {
-                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-            }
-            if !need_clock_change {
-                self.clock_updated(false);
+                if clock_pm::CM.need_clock_change(&self.clock_params){
+                    clock_pm::CM.clock_change();
+                }
+                else {
+                    self.clock_updated(false);
+                }
             }
         }
         else {
@@ -721,12 +722,13 @@ impl<'a> hil::uart::UART for USART<'a> {
         self.callback_rx_len.set(rx_len);
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
-            let mut need_clock_change = false;
             unsafe {
-                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-            }
-            if !need_clock_change {
-                self.clock_updated(false);
+                if clock_pm::CM.need_clock_change(&self.clock_params){
+                    clock_pm::CM.clock_change();
+                }
+                else {
+                    self.clock_updated(false);
+                }
             }
         }
         else {

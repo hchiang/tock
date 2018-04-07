@@ -48,5 +48,6 @@ pub trait ClockManager<'a> {
     fn register(&mut self, c:&'a ClockClient<'a>);
     fn lock(&mut self)->bool;
     fn unlock(&mut self);
-    fn clock_change(&mut self, params:&ClockParams)->bool;
+    fn need_clock_change(&self, params:&ClockParams)->bool;
+    fn clock_change(&mut self);
 }

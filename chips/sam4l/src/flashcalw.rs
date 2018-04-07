@@ -224,7 +224,7 @@ impl<'a> FLASHCALW<'a> {
             buffer: TakeCell::empty(),
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x00000040, 0, 80000000),
+            clock_params: ClockParams::new(0x00000000, 0, 80000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
             read_callback_address: Cell::new(0),
@@ -331,29 +331,31 @@ impl<'a> FLASHCALW<'a> {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
-                self.client.get().map(|client| {
-                    self.buffer.take().map(|buffer| {
-                        client.read_complete(buffer, hil::flash::Error::CommandComplete);
-                    });
-                });
-
                 if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
                     }                
                 }
+
+                self.client.get().map(|client| {
+                    self.buffer.take().map(|buffer| {
+                        client.read_complete(buffer, hil::flash::Error::CommandComplete);
+                    });
+                });
+
             }
             FlashState::WriteUnlocking { page } => {
                 if self.cm_enabled.get() && !self.has_lock.get() {
                     self.return_params.set(true);
-                    self.clock_params.clocklist.set(0x004);
-                    let mut need_clock_change = false;
+                    self.clock_params.clocklist.set(0x0004);
                     unsafe {
-                        need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-                    }
-                    if !need_clock_change {
-                        self.clock_updated(false);
+                        if clock_pm::CM.need_clock_change(&self.clock_params){
+                            clock_pm::CM.clock_change();
+                        }
+                        else {
+                            self.clock_updated(false);
+                        }
                     }
                     return;
                 }    
@@ -377,29 +379,30 @@ impl<'a> FLASHCALW<'a> {
 
                 self.current_state.set(FlashState::Ready);
 
-                self.client.get().map(|client| {
-                    self.buffer.take().map(|buffer| {
-                        client.write_complete(buffer, hil::flash::Error::CommandComplete);
-                    });
-                });
-
                 if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
                     }                
                 }
+
+                self.client.get().map(|client| {
+                    self.buffer.take().map(|buffer| {
+                        client.write_complete(buffer, hil::flash::Error::CommandComplete);
+                    });
+                });
             }
             FlashState::EraseUnlocking { page } => {
                 if self.cm_enabled.get() && !self.has_lock.get() {
                     self.return_params.set(true);
-                    self.clock_params.clocklist.set(0x004);
-                    let mut need_clock_change = false;
+                    self.clock_params.clocklist.set(0x0004);
                     unsafe {
-                        need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-                    }
-                    if !need_clock_change {
-                        self.clock_updated(false);
+                        if clock_pm::CM.need_clock_change(&self.clock_params){
+                            clock_pm::CM.clock_change();
+                        }
+                        else {
+                            self.clock_updated(false);
+                        }
                     }
                     return;
                 }    
@@ -409,16 +412,16 @@ impl<'a> FLASHCALW<'a> {
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
 
-                self.client
-                    .get()
-                    .map(|client| { client.erase_complete(hil::flash::Error::CommandComplete); });
-
                 if self.cm_enabled.get() && self.has_lock.get() {
                     self.has_lock.set(false);
                     unsafe {
                         clock_pm::CM.unlock();
                     }                
                 }
+
+                self.client
+                    .get()
+                    .map(|client| { client.erase_complete(hil::flash::Error::CommandComplete); });
             }
             _ => {
                 self.current_state.set(FlashState::Ready);
@@ -882,12 +885,13 @@ impl<'a> FLASHCALW<'a> {
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
             self.clock_params.clocklist.set(0x40);
-            let mut need_clock_change = false;
             unsafe {
-                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-            }
-            if !need_clock_change {
-                self.clock_updated(false);
+                if clock_pm::CM.need_clock_change(&self.clock_params){
+                    clock_pm::CM.clock_change();
+                }
+                else {
+                    self.clock_updated(false);
+                }
             }
         }    
         else {

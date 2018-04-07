@@ -509,12 +509,13 @@ impl<'a> Spi<'a> {
 
         if self.cm_enabled.get() && !self.has_lock.get() {
             self.return_params.set(true);
-            let mut need_clock_change = false;
             unsafe {
-                need_clock_change = clock_pm::CM.clock_change(&self.clock_params);
-            }
-            if !need_clock_change {
-                self.clock_updated(false);
+                if clock_pm::CM.need_clock_change(&self.clock_params){
+                    clock_pm::CM.clock_change();
+                }
+                else {
+                    self.clock_updated(false);
+                }
             }
         }
         else {

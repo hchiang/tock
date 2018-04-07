@@ -108,13 +108,16 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         }
     }
 
-    fn clock_change(&mut self,params:&ClockParams)-> bool{
+    fn need_clock_change(&self,params:&ClockParams)->bool{
         if !self.change_clock {
             if (params.clocklist.get() >> self.current_clock) & 0b1 == 1 {
                 return false;
             }
         }
+        return true;
+    }
 
+    fn clock_change(&mut self){
         self.change_clock=true;
         if self.lock_count == 0 {
             //locking prevents interrupts from causing nested clock_change
@@ -122,7 +125,6 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
             self.update_clock();
             self.lock_count -= 1;
         }
-        return true;
     }
 }
 pub static mut CM: ImixClockManager = ImixClockManager {
