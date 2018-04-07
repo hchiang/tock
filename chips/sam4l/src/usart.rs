@@ -537,6 +537,17 @@ impl<'a> dma::DMAClient for USART<'a>{
                     self.usart_tx_state.set(USARTStateTX::Transfer_Completing);
                     self.enable_tx_empty_interrupt();
 
+                    self.callback_tx_len.set(0);
+                    if self.cm_enabled.get() && self.has_lock.get() && self.callback_rx_len.get() == 0 {
+                        let regs: &USARTRegisters = unsafe { &*self.registers };
+                        //Wait for TX buffer to empty
+                        while regs.csr.get() & (1 << 9) == 0 {};
+                        self.has_lock.set(false);
+                        unsafe {
+                            clock_pm::CM.unlock();
+                        }
+                    }
+
                     // get buffer
                     let buffer = self.tx_dma.get().map_or(None, |tx_dma| {
                         let buf = tx_dma.abort_xfer();
@@ -554,17 +565,6 @@ impl<'a> dma::DMAClient for USART<'a>{
                         });
                     });
                     self.tx_len.set(0);
-
-                    self.callback_tx_len.set(0);
-                    if self.cm_enabled.get() && self.has_lock.get() && self.callback_rx_len.get() == 0 {
-                        let regs: &USARTRegisters = unsafe { &*self.registers };
-                        //Wait for TX buffer to empty
-                        while regs.csr.get() & (1 << 9) == 0 {};
-                        self.has_lock.set(false);
-                        unsafe {
-                            clock_pm::CM.unlock();
-                        }
-                    }
                 }
             }
 
