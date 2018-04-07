@@ -44,6 +44,7 @@ struct Imix {
     adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc>,
     flash_driver: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
+    clock_driver: &'static capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
     ipc: kernel::ipc::IPC,
 }
 
@@ -59,6 +60,7 @@ impl kernel::Platform for Imix {
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             27 => f(Some(self.flash_driver)),
+            28 => f(Some(self.clock_driver)),
             _ => f(None),
         }
     }
@@ -134,6 +136,9 @@ unsafe fn set_pin_primary_functions() {
 #[no_mangle]
 pub unsafe fn reset_handler() {
     sam4l::init();
+
+    let clock_driver = static_init!(capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
+                                    capsules::clock_pm::ClockCM::new(sam4l::clock_pm::ImixClockManager::new()));
 
     sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::RCFAST{
         frequency: sam4l::pm::RcfastFrequency::Frequency12MHz});
@@ -277,6 +282,7 @@ pub unsafe fn reset_handler() {
         adc: adc,
         spi: spi_syscalls,
         flash_driver: flash_driver,
+        clock_driver: clock_driver,
         ipc: kernel::ipc::IPC::new(),
     };
 

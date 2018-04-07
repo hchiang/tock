@@ -304,7 +304,6 @@ impl PowerManager {
             }
 
             SystemClockSource::ExternalOscillator { frequency, startup_mode } => {
-                debug_gpio!(1,set);
                 configure_external_oscillator(frequency, startup_mode);
             }
 
@@ -313,7 +312,6 @@ impl PowerManager {
             }
 
             SystemClockSource::DfllRc32kAt48MHz => {
-                debug_gpio!(2,set);
                 //assumes rc32k is on
                 configure_48mhz_dfll();
             }
@@ -344,7 +342,6 @@ impl PowerManager {
             SystemClockSource::ExternalOscillator {..} => {
                 // Only turn off external oscillator if pll is off
                 if self.system_on_clocks.get() & (1 << 7) == 0 {
-                    debug_gpio!(1,clear);
                     scif::disable_osc_16mhz();
                 }
                 let clock_mask = self.system_on_clocks.get();
@@ -362,7 +359,6 @@ impl PowerManager {
             }
 
             SystemClockSource::DfllRc32kAt48MHz => {
-                debug_gpio!(2,clear);
                 scif::disable_dfll_rc32k();
                 let clock_mask = self.system_on_clocks.get();
                 self.system_on_clocks.set(clock_mask & !(1 << 6));

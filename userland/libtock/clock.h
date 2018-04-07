@@ -9,7 +9,7 @@ extern "C" {
 #define CLOCK_DRIVER_NUM 0x1C
 
 typedef enum {
-  RCSYS,
+  DEFAULT,
   RC1M,
   RCFAST4M,
   RCFAST8M,
@@ -18,6 +18,7 @@ typedef enum {
   DFLL,
   PLL,
   RC80M,
+  RCSYS,
 } Clock_List_t;
 
 int clock_set(Clock_List_t clock);

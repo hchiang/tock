@@ -29,7 +29,8 @@ impl ImixClockManager {
                                     frequency: pm::OscillatorFrequency::Frequency16MHz,
                                     startup_mode: pm::OscillatorStartup::FastStart},
             8 => system_clock = pm::SystemClockSource::RC80M,
-            _ => system_clock = pm::SystemClockSource::RcsysAt115kHz,
+            9 => system_clock = pm::SystemClockSource::RcsysAt115kHz,
+            _ => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
         }
         return system_clock;
     }
@@ -42,11 +43,9 @@ impl ImixClockManager {
 impl SetClock for ImixClockManager {
     fn set_clock(&self, clock: u32) {
         let system_clock = self.convert_to_clock(clock);
-        debug_gpio!(0,toggle);
         unsafe {
             pm::PM.change_system_clock(system_clock);
         }
-        debug_gpio!(0,toggle);
     }
 }
 
