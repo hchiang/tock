@@ -168,7 +168,7 @@ impl<'a> USART<'a> {
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
             //PLL-> ExtOsc, RCFAST, RC1M
-            clock_params: ClockParams::new(0x000001fc, 0, 48000000),
+            clock_params: ClockParams::new(0x000001fe, 8, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
 
@@ -538,6 +538,7 @@ impl<'a> dma::DMAClient for USART<'a>{
                     self.enable_tx_empty_interrupt();
 
                     self.callback_tx_len.set(0);
+
                     if self.cm_enabled.get() && self.has_lock.get() && self.callback_rx_len.get() == 0 {
                         let regs: &USARTRegisters = unsafe { &*self.registers };
                         //Wait for TX buffer to empty

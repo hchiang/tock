@@ -478,13 +478,19 @@ unsafe fn configure_48mhz_dfll() {
 unsafe fn configure_external_oscillator(frequency: OscillatorFrequency,
                                         startup_mode: OscillatorStartup) {
 
-    // start the external oscillator
-    match frequency {
-        OscillatorFrequency::Frequency16MHz => {
-            match startup_mode {
-                OscillatorStartup::FastStart => scif::setup_osc_16mhz_fast_startup(),
-                OscillatorStartup::SlowStart => scif::setup_osc_16mhz_slow_startup(),
-            };
+    if (PM.system_on_clocks.get() & (1 << 7)) != 0 {
+        //PLL is on
+        select_main_clock(MainClock::RCSYS);
+     }
+    else {
+        // start the external oscillator
+        match frequency {
+            OscillatorFrequency::Frequency16MHz => {
+                match startup_mode {
+                    OscillatorStartup::FastStart => scif::setup_osc_16mhz_fast_startup(),
+                    OscillatorStartup::SlowStart => scif::setup_osc_16mhz_slow_startup(),
+                };
+            }
         }
     }
     

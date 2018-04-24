@@ -136,27 +136,27 @@ unsafe fn set_pin_primary_functions() {
 pub unsafe fn reset_handler() {
     sam4l::init();
 
+    set_pin_primary_functions();
+
+    kernel::debug::assign_gpios(Some(&sam4l::gpio::PC[26]),
+                                Some(&sam4l::gpio::PC[27]),
+                                Some(&sam4l::gpio::PC[28]));
+    debug_gpio!(0, make_output);
+    debug_gpio!(0, clear);
+    debug_gpio!(1, make_output);
+    debug_gpio!(1, clear);
+    debug_gpio!(2, make_output);
+    debug_gpio!(2, clear);
+
     //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32kAt48MHz);
-    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::ExternalOscillator{
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::ExternalOscillator{
         frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
         startup_mode: sam4l::pm::OscillatorStartup::FastStart,
     });
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
-
-    //set_pin_primary_functions();
-
-    //kernel::debug::assign_gpios(Some(&sam4l::gpio::PC[26]),
-    //                            Some(&sam4l::gpio::PC[27]),
-    //                            Some(&sam4l::gpio::PC[28]));
-    //debug_gpio!(0, make_output);
-    //debug_gpio!(0, clear);
-    //debug_gpio!(1, make_output);
-    //debug_gpio!(1, clear);
-    //debug_gpio!(2, make_output);
-    //debug_gpio!(2, clear);
 
     // # CONSOLE
 
@@ -231,8 +231,7 @@ pub unsafe fn reset_handler() {
     );
     sam4l::spi::SPI.set_client(mux_spi);
     sam4l::spi::SPI.init();
-    //sam4l::spi::SPI.enable();
-    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
 
     // Create a virtualized client for SPI system call interface,
     // then the system call capsule
