@@ -7,8 +7,6 @@ const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
 
 pub struct ImixClockManager<'a> {
     clients: List<'a, ClockClient<'a> + 'a>,
-    //client_ptr: Option<&'a ListLink<'a, ClockClient<'a> + 'a>>,
-    num_clients: u32,
     current_clock: u32,
     change_clock: bool,
     lock_count: u32,
@@ -20,10 +18,9 @@ impl<'a> ImixClockManager<'a> {
         let mut clockmask : u32 = 0xffffffff;
         let mut min_freq : u32 = 0;
         let mut max_freq : u32 = 48000000;
+        let mut client_ctr = 0;
 
-        /*
-        for i in 0..self.num_clients {
-            let client = Some(self.client_ptr).0.get();
+        for client in self.clients.iter() { 
             let param = client.get_params();
             match param {
                 Some(param) => {
@@ -33,8 +30,15 @@ impl<'a> ImixClockManager<'a> {
                     let next_max_freq = cmp::min(max_freq,
                         param.max_frequency.get());
                     if next_clockmask == 0 || (next_min_freq >= next_max_freq) {
+                        for i in 0..client_ctr {
+                            let client_node = self.clients.pop_head();
+                            match client_node {
+                                Some(add_node) => { self.clients.push_tail(add_node); }
+                                None => {}
+                            }
+                        } 
                         for i in 0..NUM_CLOCK_SOURCES {
-                            if (next_clockmask >> i) & 0b1 == 1{
+                            if (clockmask >> i) & 0b1 == 1{
                                 return i as u32;
                             } 
                         }
@@ -45,12 +49,8 @@ impl<'a> ImixClockManager<'a> {
                 },
                 None => continue,
             }
-            self.client_ptr = Some(self.client_ptr).next();
-            if self.client_ptr.0.get() == None {
-                self.client_ptr = Some(self.clients).head();
-            }
+            client_ctr += 1;
         }
-        */
 
         self.change_clock = false;
         for i in 0..NUM_CLOCK_SOURCES {
@@ -111,7 +111,6 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         self.clients.push_head(c);
         c.enable_cm();
         //self.client_ptr = Some(self.clients).head();
-        self.num_clients += 1;
     }
     
     fn lock(&mut self) -> bool {
@@ -153,8 +152,6 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
 }
 pub static mut CM: ImixClockManager = ImixClockManager {
     clients: List::new(),
-    //client_ptr: None,
-    num_clients: 0,
     current_clock: 9,
     change_clock: false,
     lock_count: 0,

@@ -33,6 +33,7 @@ use kernel::hil::radio;
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::spi::SpiMaster;
 use kernel::hil::Controller;
+use kernel::hil::clock_pm::ClockManager;
 
 use components::adc::AdcComponent;
 use components::alarm::AlarmDriverComponent;
@@ -326,7 +327,6 @@ pub unsafe fn reset_handler() {
         )
     );
     hil::uart::UART::set_client(&sam4l::usart::USART3, uart_mux);
-    //sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
 
     let console = ConsoleComponent::new(board_kernel, uart_mux, 115200).finalize();
 
@@ -402,6 +402,11 @@ pub unsafe fn reset_handler() {
         SRC_MAC_ADDR,
         &LOCAL_IP_IFACES,
     ).finalize();
+
+    sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
+    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
         console,
