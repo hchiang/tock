@@ -42,14 +42,14 @@
 //! let humidity = static_init!(
 //!        capsules::humidity::HumiditySensor<'static>,
 //!        capsules::humidity::HumiditySensor::new(si7021,
-//!                                                 kernel::Grant::create()), 96/8);
+//!                                                kernel::Grant::create()));
 //! kernel::hil::sensors::HumidityDriver::set_client(si7021, humidity);
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Driver, Grant};
-use kernel::ReturnCode;
 use kernel::hil;
+use kernel::ReturnCode;
+use kernel::{AppId, Callback, Driver, Grant};
 
 /// Syscall number
 pub const DRIVER_NUM: usize = 0x60001;
@@ -72,7 +72,7 @@ pub struct HumiditySensor<'a> {
     busy: Cell<bool>,
 }
 
-impl<'a> HumiditySensor<'a> {
+impl HumiditySensor<'a> {
     pub fn new(driver: &'a hil::sensors::HumidityDriver, grant: Grant<App>) -> HumiditySensor<'a> {
         HumiditySensor {
             driver: driver,
@@ -91,8 +91,7 @@ impl<'a> HumiditySensor<'a> {
                 } else {
                     ReturnCode::EBUSY
                 }
-            })
-            .unwrap_or_else(|err| err.into())
+            }).unwrap_or_else(|err| err.into())
     }
 
     fn call_driver(&self, command: HumidityCommand, _: usize) -> ReturnCode {
@@ -102,17 +101,16 @@ impl<'a> HumiditySensor<'a> {
         }
     }
 
-    fn configure_callback(&self, callback: Callback) -> ReturnCode {
+    fn configure_callback(&self, callback: Option<Callback>, app_id: AppId) -> ReturnCode {
         self.apps
-            .enter(callback.app_id(), |app, _| {
-                app.callback = Some(callback);
+            .enter(app_id, |app, _| {
+                app.callback = callback;
                 ReturnCode::SUCCESS
-            })
-            .unwrap_or_else(|err| err.into())
+            }).unwrap_or_else(|err| err.into())
     }
 }
 
-impl<'a> hil::sensors::HumidityClient for HumiditySensor<'a> {
+impl hil::sensors::HumidityClient for HumiditySensor<'a> {
     fn callback(&self, tmp_val: usize) {
         for cntr in self.apps.iter() {
             cntr.enter(|app, _| {
@@ -126,11 +124,16 @@ impl<'a> hil::sensors::HumidityClient for HumiditySensor<'a> {
     }
 }
 
-impl<'a> Driver for HumiditySensor<'a> {
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+impl Driver for HumiditySensor<'a> {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             // subscribe to temperature reading with callback
-            0 => self.configure_callback(callback),
+            0 => self.configure_callback(callback, app_id),
             _ => ReturnCode::ENOSUPPORT,
         }
     }

@@ -24,9 +24,9 @@
 //!         usb_client, kernel::Grant::create()));
 //! ```
 
-use core::cell::Cell;
-use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
+use kernel::common::cells::OptionalCell;
 use kernel::hil;
+use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 
 /// Syscall number
 pub const DRIVER_NUM: usize = 0x20005;
@@ -37,13 +37,13 @@ pub struct App {
     awaiting: Option<Request>,
 }
 
-pub struct UsbSyscallDriver<'a, C: hil::usb::Client + 'a> {
+pub struct UsbSyscallDriver<'a, C: hil::usb::Client> {
     usbc_client: &'a C,
     apps: Grant<App>,
-    serving_app: Cell<Option<AppId>>,
+    serving_app: OptionalCell<AppId>,
 }
 
-impl<'a, C> UsbSyscallDriver<'a, C>
+impl<C> UsbSyscallDriver<'a, C>
 where
     C: hil::usb::Client,
 {
@@ -51,12 +51,12 @@ where
         UsbSyscallDriver {
             usbc_client: usbc_client,
             apps: apps,
-            serving_app: Cell::new(None),
+            serving_app: OptionalCell::empty(),
         }
     }
 
     fn serve_waiting_apps(&self) {
-        if self.serving_app.get().is_some() {
+        if self.serving_app.is_some() {
             // An operation on the USBC client is in progress
             return;
         }
@@ -98,19 +98,24 @@ enum Request {
     EnableAndAttach,
 }
 
-impl<'a, C> Driver for UsbSyscallDriver<'a, C>
+impl<C> Driver for UsbSyscallDriver<'a, C>
 where
     C: hil::usb::Client,
 {
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             // Set callback for result
-            0 => self.apps
-                .enter(callback.app_id(), |app, _| {
-                    app.callback = Some(callback);
+            0 => self
+                .apps
+                .enter(app_id, |app, _| {
+                    app.callback = callback;
                     ReturnCode::SUCCESS
-                })
-                .unwrap_or_else(|err| err.into()),
+                }).unwrap_or_else(|err| err.into()),
             _ => ReturnCode::ENOSUPPORT,
         }
     }
@@ -122,7 +127,8 @@ where
 
             // Enable USB controller, attach to bus, and service default control endpoint
             1 => {
-                let result = self.apps
+                let result = self
+                    .apps
                     .enter(appid, |app, _| {
                         if app.awaiting.is_some() {
                             // Each app may make only one request at a time
@@ -135,8 +141,7 @@ where
                                 ReturnCode::EINVAL
                             }
                         }
-                    })
-                    .unwrap_or_else(|err| err.into());
+                    }).unwrap_or_else(|err| err.into());
 
                 if result == ReturnCode::SUCCESS {
                     self.serve_waiting_apps();

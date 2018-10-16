@@ -36,9 +36,12 @@
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Driver, ReturnCode};
-use kernel::common::take_cell::TakeCell;
+use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::i2c;
+use kernel::{AppId, Callback, Driver, ReturnCode};
+
+/// Syscall driver number.
+pub const DRIVER_NUM: usize = 0x80001;
 
 pub static mut BUFFER: [u8; 8] = [0; 8];
 
@@ -97,10 +100,10 @@ pub struct MAX17205<'a> {
     soc_mah: Cell<u16>,
     voltage: Cell<u16>,
     buffer: TakeCell<'static, [u8]>,
-    client: Cell<Option<&'static MAX17205Client>>,
+    client: OptionalCell<&'static MAX17205Client>,
 }
 
-impl<'a> MAX17205<'a> {
+impl MAX17205<'a> {
     pub fn new(
         i2c_lower: &'a i2c::I2CDevice,
         i2c_upper: &'a i2c::I2CDevice,
@@ -114,12 +117,12 @@ impl<'a> MAX17205<'a> {
             soc_mah: Cell::new(0),
             voltage: Cell::new(0),
             buffer: TakeCell::new(buffer),
-            client: Cell::new(None),
+            client: OptionalCell::empty(),
         }
     }
 
     pub fn set_client<C: MAX17205Client>(&self, client: &'static C) {
-        self.client.set(Some(client));
+        self.client.set(client);
     }
 
     fn setup_read_status(&self) -> ReturnCode {
@@ -190,7 +193,7 @@ impl<'a> MAX17205<'a> {
     }
 }
 
-impl<'a> i2c::I2CClient for MAX17205<'a> {
+impl i2c::I2CClient for MAX17205<'a> {
     fn command_complete(&self, buffer: &'static mut [u8], _error: i2c::Error) {
         match self.state.get() {
             State::SetupReadStatus => {
@@ -207,7 +210,7 @@ impl<'a> i2c::I2CClient for MAX17205<'a> {
                     ReturnCode::SUCCESS
                 };
 
-                self.client.get().map(|client| client.status(status, error));
+                self.client.map(|client| client.status(status, error));
 
                 self.buffer.replace(buffer);
                 self.i2c_lower.disable();
@@ -251,7 +254,7 @@ impl<'a> i2c::I2CClient for MAX17205<'a> {
                     ReturnCode::SUCCESS
                 };
 
-                self.client.get().map(|client| {
+                self.client.map(|client| {
                     client.state_of_charge(self.soc.get(), self.soc_mah.get(), full_mah, error);
                 });
 
@@ -274,7 +277,7 @@ impl<'a> i2c::I2CClient for MAX17205<'a> {
                     ReturnCode::SUCCESS
                 };
 
-                self.client.get().map(|client| {
+                self.client.map(|client| {
                     client.coulomb(coulomb, error);
                 });
 
@@ -318,7 +321,6 @@ impl<'a> i2c::I2CClient for MAX17205<'a> {
                 };
 
                 self.client
-                    .get()
                     .map(|client| client.voltage_current(self.voltage.get(), current, error));
 
                 self.buffer.replace(buffer);
@@ -344,7 +346,7 @@ impl<'a> i2c::I2CClient for MAX17205<'a> {
                     ReturnCode::SUCCESS
                 };
 
-                self.client.get().map(|client| client.romid(rid, error));
+                self.client.map(|client| client.romid(rid, error));
 
                 self.i2c_upper.disable();
                 self.state.set(State::Idle);
@@ -356,27 +358,26 @@ impl<'a> i2c::I2CClient for MAX17205<'a> {
 
 pub struct MAX17205Driver<'a> {
     max17205: &'a MAX17205<'a>,
-    callback: Cell<Option<Callback>>,
+    callback: OptionalCell<Callback>,
 }
 
-impl<'a> MAX17205Driver<'a> {
+impl MAX17205Driver<'a> {
     pub fn new(max: &'a MAX17205) -> MAX17205Driver<'a> {
         MAX17205Driver {
             max17205: max,
-            callback: Cell::new(None),
+            callback: OptionalCell::empty(),
         }
     }
 }
 
-impl<'a> MAX17205Client for MAX17205Driver<'a> {
+impl MAX17205Client for MAX17205Driver<'a> {
     fn status(&self, status: u16, error: ReturnCode) {
         self.callback
-            .get()
-            .map(|mut cb| cb.schedule(From::from(error), status as usize, 0));
+            .map(|cb| cb.schedule(From::from(error), status as usize, 0));
     }
 
     fn state_of_charge(&self, percent: u16, capacity: u16, full_capacity: u16, error: ReturnCode) {
-        self.callback.get().map(|mut cb| {
+        self.callback.map(|cb| {
             cb.schedule(
                 From::from(error),
                 percent as usize,
@@ -387,18 +388,16 @@ impl<'a> MAX17205Client for MAX17205Driver<'a> {
 
     fn voltage_current(&self, voltage: u16, current: u16, error: ReturnCode) {
         self.callback
-            .get()
-            .map(|mut cb| cb.schedule(From::from(error), voltage as usize, current as usize));
+            .map(|cb| cb.schedule(From::from(error), voltage as usize, current as usize));
     }
 
     fn coulomb(&self, coulomb: u16, error: ReturnCode) {
         self.callback
-            .get()
-            .map(|mut cb| cb.schedule(From::from(error), coulomb as usize, 0));
+            .map(|cb| cb.schedule(From::from(error), coulomb as usize, 0));
     }
 
     fn romid(&self, rid: u64, error: ReturnCode) {
-        self.callback.get().map(|mut cb| {
+        self.callback.map(|cb| {
             cb.schedule(
                 From::from(error),
                 (rid & 0xffffffff) as usize,
@@ -408,16 +407,21 @@ impl<'a> MAX17205Client for MAX17205Driver<'a> {
     }
 }
 
-impl<'a> Driver for MAX17205Driver<'a> {
+impl Driver for MAX17205Driver<'a> {
     /// Setup callback.
     ///
     /// ### `subscribe_num`
     ///
     /// - `0`: Setup a callback for when all events complete or data is ready.
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        _app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             0 => {
-                self.callback.set(Some(callback));
+                self.callback.insert(callback);
                 ReturnCode::SUCCESS
             }
 

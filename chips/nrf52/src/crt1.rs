@@ -1,19 +1,13 @@
-use cortexm4::{generic_isr, nvic, systick_handler, SVC_Handler};
+use cortexm4::{generic_isr, hard_fault_handler, nvic, svc_handler, systick_handler};
 
 /*
  * Adapted from crt1.c which was relicensed by the original author from
  * GPLv3 to Apache 2.0.
  * The original version of the file, under GPL can be found at
- * https://github.com/SoftwareDefinedBuildings/
- *     stormport/blob/rebase0/tos/platforms/storm/stormcrt1.c
+ * https://github.com/SoftwareDefinedBuildings/stormport/blob/rebase0/tos/platforms/storm/stormcrt1.c
  *
  * Copyright 2016, Michael Andersen <m.andersen@eecs.berkeley.edu>
  */
-
-/* https://github.com/NordicSemiconductor/nrf52-hardware-startup-hands-on/blob/master/
-           pca10040/s132/arm5_no_packs/RTE/Device/nRF52832_xxAA/arm_startup_nrf52.s */
-/* https://github.com/NordicSemiconductor/nRF52-ble-app-lbs/blob/master/
-           pca10040/s132/arm5_no_packs/RTE/Device/nRF52832_xxAA/system_nrf52.c */
 
 extern "C" {
     // Symbols defined in the linker file
@@ -30,35 +24,62 @@ extern "C" {
 }
 
 unsafe extern "C" fn unhandled_interrupt() {
-    'loop0: loop {}
+    let mut interrupt_number: u32;
+
+    // IPSR[8:0] holds the currently active interrupt
+    asm!(
+        "mrs    r0, ipsr                    "
+        : "={r0}"(interrupt_number)
+        :
+        : "r0"
+        :
+        );
+
+    interrupt_number = interrupt_number & 0x1ff;
+    panic!("Unhandled Interrupt. ISR {} is active.", interrupt_number);
 }
 
-unsafe extern "C" fn hard_fault_handler() {
-    'loop0: loop {}
-}
-
-#[link_section=".vectors"]
-#[cfg_attr(rustfmt, rustfmt_skip)]
-// no_mangle Ensures that the symbol is kept until the final binary
-#[no_mangle]
-pub static BASE_VECTORS: [unsafe extern fn(); 16] = [
-    _estack, reset_handler,
-    /* NMI */           unhandled_interrupt,
-    /* Hard Fault */    hard_fault_handler,
-    /* MemManage */     unhandled_interrupt,
-    /* BusFault */      unhandled_interrupt,
-    /* UsageFault*/     unhandled_interrupt,
-    unhandled_interrupt, unhandled_interrupt, unhandled_interrupt,
+#[link_section = ".vectors"]
+#[used]
+// ensures that the symbol is kept until the final binary
+/// ARM Cortex M Vector Table
+pub static BASE_VECTORS: [unsafe extern "C" fn(); 16] = [
+    // Stack Pointer
+    _estack,
+    // Reset Handler
+    reset_handler,
+    // NMI
     unhandled_interrupt,
-    /* SVC */           SVC_Handler,
-    /* DebugMon */      unhandled_interrupt,
+    // Hard Fault
+    hard_fault_handler,
+    // Memory Managment Fault
     unhandled_interrupt,
-    /* PendSV */        unhandled_interrupt,
-    /* SysTick */       systick_handler
+    // Bus Fault
+    unhandled_interrupt,
+    // Usage Fault
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // SVCall
+    svc_handler,
+    // Reserved for Debug
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // PendSv
+    unhandled_interrupt,
+    // SysTick
+    systick_handler,
 ];
 
 #[link_section = ".vectors"]
-#[no_mangle] // Ensures that the symbol is kept until the final binary
+#[used] // Ensures that the symbol is kept until the final binary
 pub static IRQS: [unsafe extern "C" fn(); 80] = [generic_isr; 80];
 
 #[no_mangle]

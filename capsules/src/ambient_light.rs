@@ -1,7 +1,9 @@
+//! Shared userland driver for light sensors.
+//!
 //! You need a device that provides the `hil::sensors::AmbientLight` trait.
 //!
 //! ```rust
-//! let ninedof = static_init!(
+//! let light = static_init!(
 //!     capsules::sensors::AmbientLight<'static>,
 //!     capsules::sensors::AmbientLight::new(isl29035,
 //!         kernel::Grant::create()));
@@ -9,13 +11,13 @@
 //! ```
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 use kernel::hil;
+use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 
 /// Syscall number
 pub const DRIVER_NUM: usize = 0x60002;
 
-/// Per-process metdata
+/// Per-process metadata
 #[derive(Default)]
 pub struct App {
     callback: Option<Callback>,
@@ -28,7 +30,7 @@ pub struct AmbientLight<'a> {
     apps: Grant<App>,
 }
 
-impl<'a> AmbientLight<'a> {
+impl AmbientLight<'a> {
     pub fn new(sensor: &'a hil::sensors::AmbientLight, grant: Grant<App>) -> AmbientLight {
         AmbientLight {
             sensor: sensor,
@@ -50,26 +52,30 @@ impl<'a> AmbientLight<'a> {
                     }
                     ReturnCode::SUCCESS
                 }
-            })
-            .unwrap_or_else(|err| err.into())
+            }).unwrap_or_else(|err| err.into())
     }
 }
 
-impl<'a> Driver for AmbientLight<'a> {
+impl Driver for AmbientLight<'a> {
     /// Subscribe to light intensity readings
     ///
     /// ### `subscribe`
     ///
     /// - `0`: Subscribe to light intensity readings. The callback signature is
     /// `fn(lux: usize)`, where `lux` is the light intensity in lux (lx).
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
-            0 => self.apps
-                .enter(callback.app_id(), |app, _| {
-                    app.callback = Some(callback);
+            0 => self
+                .apps
+                .enter(app_id, |app, _| {
+                    app.callback = callback;
                     ReturnCode::SUCCESS
-                })
-                .unwrap_or_else(|err| err.into()),
+                }).unwrap_or_else(|err| err.into()),
             _ => ReturnCode::ENOSUPPORT,
         }
     }
@@ -97,7 +103,7 @@ impl<'a> Driver for AmbientLight<'a> {
     }
 }
 
-impl<'a> hil::sensors::AmbientLightClient for AmbientLight<'a> {
+impl hil::sensors::AmbientLightClient for AmbientLight<'a> {
     fn callback(&self, lux: usize) {
         self.command_pending.set(false);
         self.apps.each(|app| {

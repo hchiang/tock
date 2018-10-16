@@ -6,9 +6,8 @@
 /// initialize the array to the value given and return a `&'static mut`
 /// reference to it.
 ///
-/// Note that you will have to specify the array-size as an argument, but a
-/// wrong size will result in a compile-time error. This argument will be
-/// removed if `std::mem::size_of<T>` ever becomes a `const` function.
+/// If `std::mem::size_of<T>` ever becomes a `const` function then `static_init`
+/// will be optimized to save up to a word of memory for every use.
 ///
 /// # Safety
 ///
@@ -19,7 +18,6 @@
 /// destructor.
 #[macro_export]
 macro_rules! static_init {
-    ($T:ty, $e:expr, $size:expr) => (static_init!($T, $e));
     ($T:ty, $e:expr) => {
         // Ideally we could use mem::size_of<$T>, uninitialized or zerod here
         // instead of having an `Option`, however that is not currently possible
@@ -57,7 +55,29 @@ macro_rules! static_init {
 macro_rules! storage_volume {
     ($N:ident, $kB:expr) => {
         #[link_section = ".storage"]
-        #[no_mangle]
-        pub static $N : [u8; $kB * 1024] = [0x00; $kB * 1024];
-    }
+        #[used]
+        pub static $N: [u8; $kB * 1024] = [0x00; $kB * 1024];
+    };
+}
+
+/// Create an object with the given capability.
+///
+/// ```ignore
+/// use kernel::capabilities::ProcessManagementCapability;
+/// #[macro_use(create_capability)]
+/// use kernel;
+///
+/// let process_mgmt_cap = create_capability!(ProcessManagementCapability);
+/// ```
+///
+/// This helper macro can only be called in an `unsafe` block, and is used by
+/// trusted code to generate a capability that it can either use or pass to
+/// another module.
+#[macro_export]
+macro_rules! create_capability {
+    ($T:ty) => {{
+        struct Cap;
+        unsafe impl $T for Cap {}
+        Cap
+    };};
 }

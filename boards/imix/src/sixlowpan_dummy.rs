@@ -13,7 +13,8 @@
 //! the listening Imix/platform can again verify the correctness of the
 //! compression scheme.
 
-use capsules::net::ip::{IP6Header, MacAddr, IPAddr, ip6_nh};
+use capsules::net::ipv6::ip_utils::{MacAddr, IPAddr, ip6_nh};
+use capsules::net::ipv6::ipv6::{IP6Header};
 use capsules::net::sixlowpan_compression;
 use capsules::net::sixlowpan_compression::{ContextStore, Context};
 use capsules::net::util;
@@ -82,13 +83,13 @@ enum DAC {
 pub const TEST_DELAY_MS: u32 = 1000;
 pub const TEST_LOOP: bool = false;
 
-pub struct LowpanTest<'a, R: radio::Radio + 'a, A: time::Alarm + 'a> {
+pub struct LowpanTest<'a, R: radio::Radio , A: time::Alarm > {
     radio: &'a R,
     alarm: &'a A,
     test_counter: Cell<usize>,
 }
 
-impl<'a, R: radio::Radio + 'a, A: time::Alarm + 'a>
+impl<'a, R: radio::Radio , A: time::Alarm >
 LowpanTest<'a, R, A> {
     pub fn new(radio: &'a R, alarm: &'a A) -> LowpanTest<'a, R, A> {
         LowpanTest {
@@ -166,7 +167,7 @@ LowpanTest<'a, R, A> {
     }
 }
 
-impl<'a, R: radio::Radio + 'a, A: time::Alarm + 'a>
+impl<'a, R: radio::Radio , A: time::Alarm >
 time::Client for LowpanTest<'a, R, A> {
     fn fired(&self) {
         self.run_test_and_increment();

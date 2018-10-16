@@ -3,7 +3,7 @@
 use core::cell::Cell;
 use core::convert::From;
 use core::fmt;
-use kernel::common::VolatileCell;
+use kernel::common::cells::VolatileCell;
 
 /// The datastructure sent in a SETUP handshake
 #[derive(Debug, Copy, Clone)]
@@ -390,11 +390,9 @@ pub struct ConfigurationAttributes(u8);
 impl ConfigurationAttributes {
     pub fn new(is_self_powered: bool, supports_remote_wakeup: bool) -> Self {
         ConfigurationAttributes(
-            (1 << 7) | if is_self_powered { 1 << 6 } else { 0 } | if supports_remote_wakeup {
-                1 << 5
-            } else {
-                0
-            },
+            (1 << 7)
+                | if is_self_powered { 1 << 6 } else { 0 }
+                | if supports_remote_wakeup { 1 << 5 } else { 0 },
         )
     }
 }
@@ -448,11 +446,60 @@ impl Descriptor for InterfaceDescriptor {
     }
 }
 
+pub struct EndpointAddress(u8);
+
+impl EndpointAddress {
+    pub fn new(endpoint: usize, direction: TransferDirection) -> Self {
+        EndpointAddress(
+            endpoint as u8 & 0xf
+                | match direction {
+                    TransferDirection::HostToDevice => 0,
+                    TransferDirection::DeviceToHost => 1,
+                } << 7,
+        )
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum TransferType {
+    Control = 0,
+    Isochronous,
+    Bulk,
+    Interrupt,
+}
+
+pub struct EndpointDescriptor {
+    pub endpoint_address: EndpointAddress,
+    pub transfer_type: TransferType,
+    pub max_packet_size: u16,
+    // Poll for device data every `interval` frames
+    pub interval: u8,
+}
+
+impl Descriptor for EndpointDescriptor {
+    fn size(&self) -> usize {
+        7
+    }
+
+    fn write_to_unchecked(&self, buf: &[Cell<u8>]) -> usize {
+        let len = self.size();
+        buf[0].set(len as u8);
+        buf[1].set(DescriptorType::Endpoint as u8);
+        buf[2].set(self.endpoint_address.0);
+        // The below implicitly sets Synchronization Type to "No Synchronization" and
+        // Usage Type to "Data endpoint"
+        buf[3].set(self.transfer_type as u8);
+        put_u16(&buf[4..6], self.max_packet_size & 0x7ff as u16);
+        buf[6].set(self.interval);
+        len
+    }
+}
+
 pub struct LanguagesDescriptor<'a> {
     pub langs: &'a [u16],
 }
 
-impl<'a> Descriptor for LanguagesDescriptor<'a> {
+impl Descriptor for LanguagesDescriptor<'a> {
     fn size(&self) -> usize {
         2 + (2 * self.langs.len())
     }
@@ -472,7 +519,7 @@ pub struct StringDescriptor<'a> {
     pub string: &'a str,
 }
 
-impl<'a> Descriptor for StringDescriptor<'a> {
+impl Descriptor for StringDescriptor<'a> {
     fn size(&self) -> usize {
         let mut len = 2;
         for ch in self.string.chars() {

@@ -23,23 +23,26 @@
 //! }
 //! ```
 
-use core::cell::Cell;
-use kernel::{AppId, Callback, Driver};
-use kernel::ReturnCode;
+use kernel::common::cells::OptionalCell;
 use kernel::hil;
+use kernel::ReturnCode;
+use kernel::{AppId, Callback, Driver};
 
-pub struct GPIOAsync<'a, Port: hil::gpio_async::Port + 'a> {
+/// Syscall driver number.
+pub const DRIVER_NUM: usize = 0x80003;
+
+pub struct GPIOAsync<'a, Port: hil::gpio_async::Port> {
     ports: &'a [&'a Port],
-    callback: Cell<Option<Callback>>,
-    interrupt_callback: Cell<Option<Callback>>,
+    callback: OptionalCell<Callback>,
+    interrupt_callback: OptionalCell<Callback>,
 }
 
-impl<'a, Port: hil::gpio_async::Port> GPIOAsync<'a, Port> {
+impl<Port: hil::gpio_async::Port> GPIOAsync<'a, Port> {
     pub fn new(ports: &'a [&'a Port]) -> GPIOAsync<'a, Port> {
         GPIOAsync {
             ports: ports,
-            callback: Cell::new(None),
-            interrupt_callback: Cell::new(None),
+            callback: OptionalCell::empty(),
+            interrupt_callback: OptionalCell::empty(),
         }
     }
 
@@ -66,19 +69,18 @@ impl<'a, Port: hil::gpio_async::Port> GPIOAsync<'a, Port> {
     }
 }
 
-impl<'a, Port: hil::gpio_async::Port> hil::gpio_async::Client for GPIOAsync<'a, Port> {
+impl<Port: hil::gpio_async::Port> hil::gpio_async::Client for GPIOAsync<'a, Port> {
     fn fired(&self, pin: usize, identifier: usize) {
         self.interrupt_callback
-            .get()
-            .map(|mut cb| cb.schedule(identifier, pin, 0));
+            .map(|cb| cb.schedule(identifier, pin, 0));
     }
 
     fn done(&self, value: usize) {
-        self.callback.get().map(|mut cb| cb.schedule(0, value, 0));
+        self.callback.map(|cb| cb.schedule(0, value, 0));
     }
 }
 
-impl<'a, Port: hil::gpio_async::Port> Driver for GPIOAsync<'a, Port> {
+impl<Port: hil::gpio_async::Port> Driver for GPIOAsync<'a, Port> {
     /// Setup callbacks for gpio_async events.
     ///
     /// ### `subscribe_num`
@@ -93,17 +95,22 @@ impl<'a, Port: hil::gpio_async::Port> Driver for GPIOAsync<'a, Port> {
     /// - `1`: Setup a callback for when a **GPIO interrupt** occurs. This
     ///   callback will be called with two arguments, the first being the port
     ///   number of the interrupting pin, and the second being the pin number.
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        _app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             // Set callback for `done()` events
             0 => {
-                self.callback.set(Some(callback));
+                self.callback.insert(callback);
                 ReturnCode::SUCCESS
             }
 
             // Set callback for pin interrupts
             1 => {
-                self.interrupt_callback.set(Some(callback));
+                self.interrupt_callback.insert(callback);
                 ReturnCode::SUCCESS
             }
 

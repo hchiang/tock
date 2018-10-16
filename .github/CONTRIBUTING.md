@@ -10,26 +10,25 @@ contribute, and we appreciate all of them.
 * [Issue Triage](#issue-triage)
 
 If you have questions, please make a post on the [mailing list][listserv] or
-hop on [#tock][irc].
+join us on [Slack][slack].
 
 As a reminder, all contributors are expected to follow the Rust [Code of
 Conduct][coc].
 
-[irc]: https://kiwiirc.com/client/irc.freenode.net/tock
+[slack]: https://join.slack.com/t/tockos/shared_invite/enQtNDE5ODQyNDU4NTE1LTg4YzE1MTkwYzI0YjhjNjA0YWExOGY2ZGYwNjQ2YmFiZjdhOTdlMzY0YTBiYTA2YTRlYzMyZTI1MDdmMTgwMzc
 [listserv]: https://groups.google.com/forum/#!forum/tock-dev
 [coc]: https://www.rust-lang.org/conduct.html
 
 ## What Goes Where?
 
-This repository contains the core Tock kernel, the main userland library and
-the officially supported hardware platforms. Drivers useful for these platforms,
-improvements to the core kernel, or changes to the main userland libraries live
-here.
+This repository contains the core Tock kernel and the officially supported
+hardware platforms. Drivers useful for these platforms and improvements to the
+core kernel live here.
 
 If you are porting Tock to a different hardware platform or building an
 application for an existing platform, that code should go in a [separate
 repository][out-of-tree]. We still encourage you to join the [mailing
-list][listserv] and [IRC channel][irc] and ask questions there. Of course, if
+list][listserv] and [Slack][slack] and ask questions there. Of course, if
 building your application or port requires in changes in this code base, we
 encourage you to contribute them here.
 
@@ -45,13 +44,13 @@ what we don't know, so please report liberally. If you're not sure if something
 is a bug or not, feel free to file a bug anyway.
 
 If you have the chance, before reporting a bug, please [search existing
-issues](https://github.com/helena-project/tock/search?q=&type=Issues),
+issues](https://github.com/tock/tock/search?q=&type=Issues),
 as it's possible that someone else has already reported your error. This doesn't
 always work, and sometimes it's hard to know what to search for, so consider this
 extra credit. We won't mind if you accidentally file a duplicate report.
 
 Opening an issue is as easy as following [this
-link](https://github.com/helena-project/tock/issues/new) and filling out the
+link](https://github.com/tock/tock/issues/new) and filling out the
 fields.  Here's a template that you can use to file a bug, though it's not
 necessary to use it exactly:
 
@@ -80,13 +79,13 @@ error message. Including this error message in its entirety can be very helpful.
 
 ### Step 1: Fork
 
-Fork the project [on GitHub](https://github.com/helena-project/tock) and check
+Fork the project [on GitHub](https://github.com/tock/tock) and check
 out your copy locally.
 
 ```text
 $ git clone git@github.com:username/tock.git
 $ cd tock
-$ git remote add upstream git://github.com/helena-project/tock.git
+$ git remote add upstream git://github.com/tock/tock.git
 ```
 
 ### Step 2: Branch
@@ -170,7 +169,7 @@ $ git rebase upstream/master
 $ git push origin my-branch
 ```
 
-Go to https://github.com/yourusername/tock and select your branch.
+Go to https://github.com/<yourusername>/tock and select your branch.
 Click the 'Pull Request' button and fill out the form.
 
 ### Step 6: Discuss and update
@@ -204,13 +203,10 @@ commits (see notes about [rewriting-history](#rewriting-history)).
 ### Step 7: Style
 
 Mainline Tock uses [rustfmt](https://github.com/rust-lang-nursery/rustfmt) to
-format code, using mostly the default style options (see [rustfmt.toml](rustfmt.toml)
+format code, using mostly the default style options (see [rustfmt.toml](../rustfmt.toml)
 for details. As rustfmt is under development, Tock pegs a specific version for
 use in formatting. The build system will automatically use (and install if needed)
 the correct rustfmt version when you invoke `make format`.
-
-For userland C/C++ code, Tock uses [uncrustify](https://github.com/uncrustify/uncrustify).
-Style configuration can be found in [userland/tools/uncrustify/](userland/tools/uncrustify/uncrustify.cfg).
 
 The target `make formatall` in the root will automatically run all style checks
 and make any required changes. PRs must pass the formatting checks before landing.
@@ -221,6 +217,14 @@ In order to land, a Pull Request needs to be reviewed and
 [approved](#getting-approvals-for-your-pull-request) by at least one person with
 commit access to the Tock repository and pass the continuous integration tests.
 After that, as long as there are no objections, the Pull Request can be merged.
+
+We use the bors-ng bot to merge PRs. In short, when someone replies `bors r+`,
+your PR has been scheduled for final tests and will be automatically merged. If
+a maintainer replies `bors delegate+`, then you have been granted the authority
+to merge your own PR (usually this will happen if there are some trivial
+changes required). For more on bors,
+[see the bors documentation](https://bors.tech/documentation/).
+
 
 ## Issue Triage
 
@@ -233,7 +237,7 @@ still valid. Load up an older issue, double check that it's still true, and
 leave a comment letting us know if it is or is not. The [least recently
 updated sort][lru] is good for finding issues like this.
 
-[lru]: https://github.com/helena-project/tock/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-asc
+[lru]: https://github.com/tock/tock/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-asc
 
 ## Notes
 

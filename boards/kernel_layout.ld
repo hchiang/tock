@@ -27,17 +27,36 @@
  *    The `_sapps` symbol marks the beginning of application memory in flash.
  */
 
-MEMORY
-{
-  rom (rx)  : ORIGIN =  ROM_ORIGIN, LENGTH =  ROM_LENGTH
-  prog (rx) : ORIGIN = PROG_ORIGIN, LENGTH = PROG_LENGTH
-  ram (rwx) : ORIGIN =  RAM_ORIGIN, LENGTH =  RAM_LENGTH
-}
-
-__stack_size__ = DEFINED(__stack_size__) ? __stack_size__ : 0x1000;
 
 SECTIONS
 {
+   .stack (NOLOAD) :
+    {
+        /* Kernel stack.
+         *
+         * Tock places the kernel stack at the bottom of SRAM so that the
+         * kernel will trigger memory fault if it exceeds its stack depth,
+         * rather than silently overwriting valuable data.
+         */
+        . = ALIGN(8);
+         _sstack = .;
+
+         /* For GNU LD, we can just advance the location pointer (".") here to
+          * reserve space for the stack. That, however, doesn't seem to work
+          * for LLVM LLD. The resulting ELF has a stack section that shows the
+          * correct size, but the next section (in our case .relocate) is not
+          * moved down as well, instead it sits at the same address as .stack.
+          * To work around this, we declare a dummy buffer and then insert it
+          * here in the .stack section. This sets the stack size correctly and
+          * places the .relocate section at the correct address. */
+         KEEP(*(.stack_buffer))
+         /*. = . + 0x1000;*/  /*This is the original method. */
+
+         . = ALIGN(8);
+         _estack = .;
+    } > ram
+
+
     /* STATIC ELEMENTS FOR TOCK KERNEL */
     .text :
     {
@@ -146,6 +165,7 @@ SECTIONS
       _sstorage = .;
       *(.storage* storage*)
       _estorage = .;
+      . = ALIGN(512);
     } > rom
     . = ALIGN(512);
 
@@ -155,7 +175,13 @@ SECTIONS
     _textend = .;   /* alias for _etext expected by some MS toolchains */
 
 
-
+    /* Customer configuration is most often located
+     * at the end of the rom. It is conditional, and won't
+     * be written if not specified in the board specific linker
+     * file. */
+    .ccfg : {
+        KEEP(*(.ccfg))
+    } > ccfg
 
 
     /* STATIC ELEMENTS FOR TOCK APPLICATIONS */
@@ -172,8 +198,12 @@ SECTIONS
 
 
 
+
+
+
+
     /* Kernel data that must be relocated. This is program data that is
-     * exepected to live in SRAM, but is initialized with a value. This data is
+     * expected to live in SRAM, but is initialized with a value. This data is
      * physically placed into flash and is copied into SRAM by Tock. The
      * symbols here will be defined with addresses in SRAM.
      *
@@ -192,25 +222,8 @@ SECTIONS
     } > ram
 
 
-
-
     .sram (NOLOAD) :
     {
-        /* Kernel stack.
-         *
-         * To keep all kernel memory contiguous (eases MPU protection of kernel
-         * data), Tock next places its own stack into SRAM.
-         */
-        . = ALIGN(8);
-         _sstack = .;
-
-        . = . + __stack_size__;
-
-        . = ALIGN(8);
-        _estack = .;
-
-
-
         /* Kernel BSS section. Memory that is expected to be initialized to
          * zero.
          *
@@ -245,3 +258,6 @@ SECTIONS
         *(.app_memory)
     } > ram
 }
+
+ASSERT((_etext-_stext) + (_erelocate-_srelocate) < LENGTH(rom), "
+Text plus relocations exceeds the available ROM space.");

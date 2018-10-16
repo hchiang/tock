@@ -1,27 +1,31 @@
 #![feature(asm, const_fn, naked_functions)]
 #![no_std]
 
+#[allow(unused_imports)]
+#[macro_use(debug, debug_gpio, register_bitfields, register_bitmasks)]
 extern crate kernel;
+extern crate cortexm;
 
-pub mod systick;
-pub mod nvic;
+// Re-export the base generic cortex-m functions here as they are
+// valid on cortex-m3.
+pub use cortexm::support;
+
+pub use cortexm::nvic;
+pub use cortexm::scb;
+pub use cortexm::syscall;
+pub use cortexm::systick;
 
 #[no_mangle]
 #[naked]
 pub unsafe extern "C" fn systick_handler() {
     asm!(
         "
-        /* Skip saving process state if not coming from user-space */
-        cmp lr, #0xfffffffd
-        bne _systick_handler_no_stacking
+        /* Mark that the systick handler was called meaning that the process */
+        /* stopped executing because it has exceeded its timeslice. */
+        ldr r0, =SYSTICK_EXPIRED
+        mov r1, #1
+        str r1, [r0, #0]
 
-        /* We need the most recent kernel's version of r1, which points */
-        /* to the Process struct's stored registers field. The kernel's r1 */
-        /* lives in the second word of the hardware stacked registers on MSP */
-        mov r1, sp
-        ldr r1, [r1, #4]
-        stmia r1, {r4-r11}
-    _systick_handler_no_stacking:
         /* Set thread mode to privileged */
         mov r0, #0
         msr CONTROL, r0

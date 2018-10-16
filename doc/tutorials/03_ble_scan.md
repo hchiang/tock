@@ -37,7 +37,7 @@ BLE devices and not learning the entire spec.
     // These are some basic settings for BLE devices. However, since we are
     // only interesting in scanning, these are not particularly relevant.
     simple_ble_config_t ble_config = {
-      .platform_id       = 0x00, // used as 4th octect in device BLE address
+      .platform_id       = 0x00, // used as 4th octet in device BLE address
       .device_id         = DEVICE_ID_DEFAULT,
       .adv_name          = "Tock",
       .adv_interval      = MSEC_TO_UNITS(500, UNIT_0_625_MS),
@@ -128,8 +128,8 @@ packet.
     ```
 
 6. **Run the app and see the packets!** To try this tutorial application, you
-can find it in the
-[tutorials app folder](../../userland/examples/tutorials/03_ble_scan).
+   can find it in the [tutorials app
+   folder](https://github.com/tock/libtock-c/tree/master/examples/tutorials/03_ble_scan).
 
     For any new applications, ensure that the following is in the makefile
     so that the BLE serialization library is included.

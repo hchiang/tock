@@ -6,9 +6,14 @@
 /// Syscall number
 pub const DRIVER_NUM: usize = 0x00010000;
 
-use {AppId, AppSlice, Callback, Driver, Grant, Shared};
+use callback::{AppId, Callback};
+use capabilities::MemoryAllocationCapability;
+use driver::Driver;
+use grant::Grant;
+use mem::{AppSlice, Shared};
 use process;
 use returncode::ReturnCode;
+use sched::Kernel;
 
 struct IPCData {
     shared_memory: [Option<AppSlice<Shared, u8>>; 8],
@@ -31,9 +36,9 @@ pub struct IPC {
 }
 
 impl IPC {
-    pub unsafe fn new() -> IPC {
+    pub fn new(kernel: &'static Kernel, capability: &MemoryAllocationCapability) -> IPC {
         IPC {
-            data: Grant::create(),
+            data: kernel.create_grant(capability),
         }
     }
 
@@ -71,19 +76,21 @@ impl IPC {
                                         callback.schedule(otherapp.idx() + 1, 0, 0);
                                     }
                                 }
-                            })
-                            .unwrap_or(());
-                    })
-                    .unwrap_or(());
-            })
-            .unwrap_or(());
+                            }).unwrap_or(());
+                    }).unwrap_or(());
+            }).unwrap_or(());
     }
 }
 
 impl Driver for IPC {
     /// subscribe enables processes using IPC to register callbacks that fire
     /// when notify() is called.
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             // subscribe(0)
             //
@@ -93,12 +100,12 @@ impl Driver for IPC {
             // application name stored in the TBF header of the application.
             // The callback that is passed to subscribe is called when another
             // process notifies the server process.
-            0 => self.data
-                .enter(callback.app_id(), |data, _| {
-                    data.callback = Some(callback);
+            0 => self
+                .data
+                .enter(app_id, |data, _| {
+                    data.callback = callback;
                     ReturnCode::SUCCESS
-                })
-                .unwrap_or(ReturnCode::EBUSY),
+                }).unwrap_or(ReturnCode::EBUSY),
 
             // subscribe(>=1)
             //
@@ -112,11 +119,10 @@ impl Driver for IPC {
                     ReturnCode::EINVAL /* Maximum of 8 IPC's exceeded */
                 } else {
                     self.data
-                        .enter(callback.app_id(), |data, _| {
-                            data.client_callbacks[svc_id - 1] = Some(callback);
+                        .enter(app_id, |data, _| {
+                            data.client_callbacks[svc_id - 1] = callback;
                             ReturnCode::SUCCESS
-                        })
-                        .unwrap_or(ReturnCode::EBUSY)
+                        }).unwrap_or(ReturnCode::EBUSY)
                 }
             }
         }
@@ -127,6 +133,8 @@ impl Driver for IPC {
     /// and notifying an IPC client is done by setting client_or_svc to 1.
     /// In either case, the target_id is the same number as provided in a notify
     /// callback or as returned by allow.
+    ///
+    /// Returns EINVAL if the other process doesn't exist.
     fn command(
         &self,
         target_id: usize,
@@ -134,24 +142,21 @@ impl Driver for IPC {
         _: usize,
         appid: AppId,
     ) -> ReturnCode {
-        let procs = unsafe { &mut process::PROCS };
-        if target_id == 0 || target_id > procs.len() {
-            return ReturnCode::EINVAL; /* Request to IPC to impossible process */
-        }
-
         let cb_type = if client_or_svc == 0 {
             process::IPCType::Service
         } else {
             process::IPCType::Client
         };
 
-        procs[target_id - 1]
-            .as_mut()
-            .map(|target| {
-                target.schedule_ipc(appid, cb_type);
-                ReturnCode::SUCCESS
+        self.data
+            .kernel
+            .process_map_or(ReturnCode::EINVAL, target_id - 1, |target| {
+                let ret = target.enqueue_task(process::Task::IPC((appid, cb_type)));
+                match ret {
+                    true => ReturnCode::SUCCESS,
+                    false => ReturnCode::FAIL,
+                }
             })
-            .unwrap_or(ReturnCode::EINVAL) /* Request to IPC to unknown process */
     }
 
     /// allow enables processes to discover IPC services on the platform or
@@ -167,39 +172,46 @@ impl Driver for IPC {
     /// application is explicitly sharing a slice with an IPC service (as
     /// specified by the target_id). allow() simply allows both processes to
     /// access the buffer, it does not signal the service.
-    fn allow(&self, appid: AppId, target_id: usize, slice: AppSlice<Shared, u8>) -> ReturnCode {
+    fn allow(
+        &self,
+        appid: AppId,
+        target_id: usize,
+        slice: Option<AppSlice<Shared, u8>>,
+    ) -> ReturnCode {
         if target_id == 0 {
-            if slice.len() > 0 {
-                let procs = unsafe { &mut process::PROCS };
-                for (i, process) in procs.iter().enumerate() {
-                    match process {
-                        &Some(ref p) => {
-                            let s = p.package_name.as_bytes();
-                            // are slices equal?
-                            if s.len() == slice.len()
-                                && s.iter().zip(slice.iter()).all(|(c1, c2)| c1 == c2)
-                            {
-                                return ReturnCode::SuccessWithValue {
-                                    value: (i as usize) + 1,
-                                };
+            match slice {
+                Some(slice_data) => {
+                    let ret = self.data.kernel.process_each_enumerate_stop(|i, p| {
+                        let s = p.get_process_name().as_bytes();
+                        // are slices equal?
+                        if s.len() == slice_data.len()
+                            && s.iter().zip(slice_data.iter()).all(|(c1, c2)| c1 == c2)
+                        {
+                            ReturnCode::SuccessWithValue {
+                                value: (i as usize) + 1,
                             }
+                        } else {
+                            ReturnCode::FAIL
                         }
-                        &None => {}
+                    });
+                    if ret != ReturnCode::FAIL {
+                        return ret;
                     }
                 }
+                None => {}
             }
+
             return ReturnCode::EINVAL; /* AppSlice must have non-zero length */
         }
-        return self.data
+        return self
+            .data
             .enter(appid, |data, _| {
                 data.shared_memory
                     .get_mut(target_id - 1)
                     .map(|smem| {
-                        *smem = Some(slice);
+                        *smem = slice;
                         ReturnCode::SUCCESS
-                    })
-                    .unwrap_or(ReturnCode::EINVAL) /* Target process does not exist */
-            })
-            .unwrap_or(ReturnCode::EBUSY);
+                    }).unwrap_or(ReturnCode::EINVAL) /* Target process does not exist */
+            }).unwrap_or(ReturnCode::EBUSY);
     }
 }

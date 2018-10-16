@@ -1,4 +1,4 @@
-//! Support for the RF233 capsule.
+//! Support for the RF233 capsule
 
 #![allow(non_camel_case_types)]
 
@@ -84,9 +84,9 @@ pub const AACK_FVN_MODE: u8 = 3 << 6;
 pub const TRX_CTRL_1: u8 =
     (TRX_CTRL_1_DIG34_RXTX_INDICATOR | TRX_CTRL_1_SPI_CMD_TRX_STATUS | TRX_CTRL_1_AUTO_CRC);
 pub const TRX_CTRL_2: u8 = (TRX_CTRL_2_RX_SAFE_MODE | TRX_CTRL_2_DATA_RATE_250);
-pub const PHY_CC_CCA: u8 = PHY_CHANNEL | PHY_CC_CCA_MODE_CS_OR_ED;
+pub const PHY_CC_CCA: u8 = DEFAULT_PHY_CHANNEL | PHY_CC_CCA_MODE_CS_OR_ED;
 pub const PHY_TX_PWR: u8 = PHY_TX_PWR_4;
-pub const PHY_CHANNEL: u8 = 26;
+pub const DEFAULT_PHY_CHANNEL: u8 = 26;
 pub const IRQ_MASK: u8 = (IRQ_TRXBUF_ACCESS_VIOLATION | IRQ_TRX_DONE | IRQ_PLL_LOCK | IRQ_RX_START);
 pub const XAH_CTRL_1: u8 =
     XAH_CTRL_1_AACK_UPLD_RES_FT | XAH_CTRL_1_AACK_FLTR_RES_FT | XAH_CTRL_1_AACK_PROM_MODE;
@@ -94,7 +94,8 @@ pub const XAH_CTRL_0: u8 = 0;
 pub const CSMA_SEED_1: u8 = AACK_FVN_MODE;
 pub const TRX_RPC: u8 = 0xFF;
 pub const TRX_TRAC_MASK: u8 = 0xE0;
-pub const TRX_TRAC_SUCCESS_DATA_PENDING: u8 = 1;
+pub const TRX_TRAC_SUCCESS_DATA_PENDING: u8 = 1 << 5;
+pub const TRX_TRAC_CHANNEL_ACCESS_FAILURE: u8 = 3 << 5;
 
 // Default address settings.
 pub const PAN_ID_0: u8 = 0x22;
@@ -111,14 +112,17 @@ pub const SHORT_ADDR_0: u8 = 0x11;
 pub const SHORT_ADDR_1: u8 = 0x22;
 
 // Interrupt flags.
-pub const IRQ_7_BAT_LOW: u8 = 0x80;
-pub const IRQ_6_TRX_UR: u8 = 0x40;
-pub const IRQ_5_AMI: u8 = 0x20;
-pub const IRQ_4_CCA_ED_DONE: u8 = 0x10;
-pub const IRQ_3_TRX_END: u8 = 0x08;
-pub const IRQ_2_RX_START: u8 = 0x04;
-pub const IRQ_1_PLL_UNLOCK: u8 = 0x02;
-pub const IRQ_0_PLL_LOCK: u8 = 0x01;
+#[repr(u8)]
+pub enum InteruptFlags {
+    IRQ_7_BAT_LOW = 0x80,
+    IRQ_6_TRX_UR = 0x40,
+    IRQ_5_AMI = 0x20,
+    IRQ_4_CCA_ED_DONE = 0x10,
+    IRQ_3_TRX_END = 0x08,
+    IRQ_2_RX_START = 0x04,
+    IRQ_1_PLL_UNLOCK = 0x02,
+    IRQ_0_PLL_LOCK = 0x01,
+}
 
 // The commands issued over SPI (first 2-3 bits).
 #[derive(PartialEq, Copy, Clone, Debug)]

@@ -1,12 +1,14 @@
 use kernel::hil::clock_pm::{ClockManager,ClockClient,ClockParams};
-//use core::cell::Cell;
 use pm;
-use kernel::common::List;
+use core::cmp;
+use kernel::common::{List,ListLink};
 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
 
 pub struct ImixClockManager<'a> {
     clients: List<'a, ClockClient<'a> + 'a>,
+    //client_ptr: Option<&'a ListLink<'a, ClockClient<'a> + 'a>>,
+    num_clients: u32,
     current_clock: u32,
     change_clock: bool,
     lock_count: u32,
@@ -14,21 +16,43 @@ pub struct ImixClockManager<'a> {
 
 impl<'a> ImixClockManager<'a> {
 
-    fn choose_clock(&self) -> u32 {
-        //Assume there will always be a clock that works for all peripherals
-
+    fn choose_clock(&mut self) -> u32 {
         let mut clockmask : u32 = 0xffffffff;
+        let mut min_freq : u32 = 0;
+        let mut max_freq : u32 = 48000000;
 
-        for client in self.clients.iter() {
+        /*
+        for i in 0..self.num_clients {
+            let client = Some(self.client_ptr).0.get();
             let param = client.get_params();
             match param {
                 Some(param) => {
-                    clockmask &= param.clocklist.get();
+                    let next_clockmask = clockmask & param.clocklist.get();
+                    let next_min_freq = cmp::max(min_freq,
+                        param.min_frequency.get());
+                    let next_max_freq = cmp::min(max_freq,
+                        param.max_frequency.get());
+                    if next_clockmask == 0 || (next_min_freq >= next_max_freq) {
+                        for i in 0..NUM_CLOCK_SOURCES {
+                            if (next_clockmask >> i) & 0b1 == 1{
+                                return i as u32;
+                            } 
+                        }
+                    }
+                    clockmask = next_clockmask;
+                    min_freq = next_min_freq;
+                    max_freq = next_max_freq;
                 },
                 None => continue,
             }
+            self.client_ptr = Some(self.client_ptr).next();
+            if self.client_ptr.0.get() == None {
+                self.client_ptr = Some(self.clients).head();
+            }
         }
+        */
 
+        self.change_clock = false;
         for i in 0..NUM_CLOCK_SOURCES {
             if (clockmask >> i) & 0b1 == 1{
                 return i as u32;
@@ -68,8 +92,6 @@ impl<'a> ImixClockManager<'a> {
         let clock_changed = self.current_clock != clock;
         self.current_clock = clock;
 
-        self.change_clock = false;
-
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
             unsafe {
@@ -88,6 +110,8 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
     fn register(&mut self, c:&'a ClockClient<'a>) {
         self.clients.push_head(c);
         c.enable_cm();
+        //self.client_ptr = Some(self.clients).head();
+        self.num_clients += 1;
     }
     
     fn lock(&mut self) -> bool {
@@ -129,6 +153,8 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
 }
 pub static mut CM: ImixClockManager = ImixClockManager {
     clients: List::new(),
+    //client_ptr: None,
+    num_clients: 0,
     current_clock: 9,
     change_clock: false,
     lock_count: 0,
