@@ -335,9 +335,11 @@ impl SpiHw<'a> {
         let clock = pm::get_system_frequency();
 
         //TODO rate appears to be 100000 when set to 400000
-        self.baud_rate.set(rate);
-        self.clock_params.min_frequency.set(rate);
-        self.clock_params.max_frequency.set(rate*255);
+        if rate != self.baud_rate.get() {
+            self.baud_rate.set(rate);
+            self.clock_params.min_frequency.set(rate);
+            self.clock_params.max_frequency.set(rate*255);
+        }
 
         if real_rate < 188235 {
             real_rate = 188235;
@@ -808,11 +810,17 @@ impl<'a> ClockClient<'a> for SpiHw<'a> {
     }
 
     fn clock_updated(&self, clock_changed: bool) {
-        if clock_changed {
-            self.set_baud_rate(self.baud_rate.get());
-        }
-
         if self.return_params.get() {
+            let clock_freq = pm::get_system_frequency();
+            if clock_freq < self.clock_params.min_frequency.get() ||
+                clock_freq > self.clock_params.max_frequency.get() {
+                    return;
+            }
+
+            if clock_changed {
+                self.set_baud_rate(self.baud_rate.get());
+            }
+
             if !self.has_lock.get() {
                 unsafe {
                     self.has_lock.set(clock_pm::CM.lock()); 

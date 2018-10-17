@@ -463,7 +463,7 @@ impl<'a> FLASHCALW<'a> {
             buffer: TakeCell::empty(),
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x00000000, 0, 80000000),
+            clock_params: ClockParams::new(0x00000002, 1000000, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
             read_callback_address: Cell::new(0),
@@ -1029,7 +1029,7 @@ impl<'a> hil::clock_pm::ClockClient<'a> for FLASHCALW<'a> {
         self.cm_enabled.set(true);
     }
 
-    fn clock_updated(&self, clock_changed: bool) {
+    fn clock_updated(&self, _clock_changed: bool) {
         if self.return_params.get() {
             if !self.has_lock.get() {
                 unsafe {

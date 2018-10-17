@@ -469,7 +469,7 @@ impl<'a> USART<'a> {
             cm_enabled: Cell::new(false),
             return_params: Cell::new(false),
             //PLL-> ExtOsc, RCFAST, RC1M
-            clock_params: ClockParams::new(0x000001fe, 8, 48000000),
+            clock_params: ClockParams::new(0x00000004, 1000000, 48000000),
             has_lock: Cell::new(false),
             next: ListLink::empty(),
 
@@ -1257,13 +1257,19 @@ impl<'a> hil::clock_pm::ClockClient<'a> for USART<'a> {
     }
 
     fn clock_updated(&self, clock_changed: bool) {
-        if clock_changed {
-            let usart = &USARTRegManager::new(&self);
-            self.reset(usart);
-            self.set_baud_rate(usart, self.baud_rate.get());
-        }
-
         if self.return_params.get() {
+            let clock_freq = pm::get_system_frequency();
+            if clock_freq < self.clock_params.min_frequency.get() ||
+                clock_freq > self.clock_params.max_frequency.get() {
+                    return;
+            }
+
+            if clock_changed {
+                let usart = &USARTRegManager::new(&self);
+                self.reset(usart);
+                self.set_baud_rate(usart, self.baud_rate.get());
+            }
+
             if !self.has_lock.get() {
                 unsafe {
                     self.has_lock.set(clock_pm::CM.lock()); 

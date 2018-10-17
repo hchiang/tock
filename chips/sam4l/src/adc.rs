@@ -1266,7 +1266,7 @@ impl<'a> hil::clock_pm::ClockClient<'a> for Adc<'a> {
         self.cm_enabled.set(true);
     }
 
-    fn clock_updated(&self, clock_changed: bool) {
+    fn clock_updated(&self, _clock_changed: bool) {
         if self.return_params.get() {
             if !self.has_lock.get() {
                 unsafe {

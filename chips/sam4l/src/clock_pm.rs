@@ -1,7 +1,7 @@
 use kernel::hil::clock_pm::{ClockManager,ClockClient,ClockParams};
 use pm;
 use core::cmp;
-use kernel::common::{List,ListLink};
+use kernel::common::{List};
 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
 
@@ -24,16 +24,19 @@ impl<'a> ImixClockManager<'a> {
             let param = client.get_params();
             match param {
                 Some(param) => {
-                    let next_clockmask = clockmask & param.clocklist.get();
                     let next_min_freq = cmp::max(min_freq,
                         param.min_frequency.get());
                     let next_max_freq = cmp::min(max_freq,
                         param.max_frequency.get());
-                    if next_clockmask == 0 || (next_min_freq >= next_max_freq) {
-                        for i in 0..client_ctr {
+                    let next_clockmask = clockmask & param.clocklist.get() &
+                        self.freq_clockmask(next_min_freq, next_max_freq);
+                    if next_clockmask == 0 { 
+                        for _i in 0..client_ctr {
                             let client_node = self.clients.pop_head();
                             match client_node {
-                                Some(add_node) => { self.clients.push_tail(add_node); }
+                                Some(add_node) => { 
+                                    self.clients.push_tail(add_node);
+                                }
                                 None => {}
                             }
                         } 
@@ -61,7 +64,57 @@ impl<'a> ImixClockManager<'a> {
         return 0;
     }
 
-    fn convert_to_clock(&self, clock: u32)->pm::SystemClockSource{
+    fn freq_clockmask(&self, min_freq: u32, max_freq: u32) -> u32 {
+        if min_freq > max_freq {
+            return 0;
+        }
+
+        let min_clockmask: u32;
+        let max_clockmask: u32;
+
+        if min_freq <= 115200 { 
+            min_clockmask = 0x3fe;
+        } else if min_freq <= 1000000 { 
+            min_clockmask = 0x1fe;
+        } else if min_freq <= 4300000 { 
+            min_clockmask = 0x1fc;
+        } else if min_freq <= 8200000 { 
+            min_clockmask = 0x1f8;
+        } else if min_freq <= 12000000 { 
+            min_clockmask = 0x1f0;
+        } else if min_freq <= 1600000 { 
+            min_clockmask = 0x1e0;
+        } else if min_freq <= 40000000 { 
+            min_clockmask = 0x1c0;
+        } else {
+            min_clockmask = 0x0c0;
+        }
+
+        if max_freq >= 48000000 {
+            max_clockmask = 0x3fe;
+        } else if max_freq >= 40000000 {
+            max_clockmask = 0x37e;
+        } else if max_freq >= 20000000 {
+            max_clockmask = 0x27e;
+        } else if max_freq >= 16000000 {
+            max_clockmask = 0x23e;
+        } else if max_freq >= 12000000 {
+            max_clockmask = 0x21e;
+        } else if max_freq >= 8200000 {
+            max_clockmask = 0x20e;
+        } else if max_freq >= 4300000 {
+            max_clockmask = 0x206;
+        } else if max_freq >= 1000000 {
+            max_clockmask = 0x202;
+        } else {
+            max_clockmask = 0x200;
+        }
+
+        return min_clockmask & max_clockmask;
+    
+    }
+
+    fn convert_to_clock(&self, clock: u32) -> pm::SystemClockSource {
         //Roughly ordered in terms of least to most power consumption
         let mut system_clock = pm::SystemClockSource::RcsysAt115kHz;
         match clock {
@@ -86,7 +139,7 @@ impl<'a> ImixClockManager<'a> {
         return system_clock;
     }
 
-    fn update_clock(&mut self){
+    fn update_clock(&mut self) {
 
         let clock = self.choose_clock();
         let clock_changed = self.current_clock != clock;
@@ -110,7 +163,6 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
     fn register(&mut self, c:&'a ClockClient<'a>) {
         self.clients.push_head(c);
         c.enable_cm();
-        //self.client_ptr = Some(self.clients).head();
     }
     
     fn lock(&mut self) -> bool {
@@ -132,12 +184,13 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
     }
 
     fn need_clock_change(&self,params:&ClockParams)->bool{
+        //TODO frequency check
         if !self.change_clock {
-            if (params.clocklist.get() >> self.current_clock) & 0b1 == 1 {
-                return false;
+            if (params.clocklist.get() >> self.current_clock) & 0b1 == 0 {
+                return true;
             }
         }
-        return true;
+        return false;
     }
 
     fn clock_change(&mut self){
