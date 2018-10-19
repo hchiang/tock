@@ -31,7 +31,7 @@ use sam4l;
 
 // Save some deep nesting
 type RF233Device =
-    capsules::rf233::RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw<'static>>>;
+    capsules::rf233::RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>;
 
 pub struct RadioComponent {
     board_kernel: &'static kernel::Kernel,

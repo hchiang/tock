@@ -24,11 +24,11 @@ use kernel::component::Component;
 use sam4l;
 
 pub struct SpiSyscallComponent {
-    spi_mux: &'static MuxSpiMaster<'static, sam4l::spi::SpiHw<'static>>,
+    spi_mux: &'static MuxSpiMaster<'static, sam4l::spi::SpiHw>,
 }
 
 pub struct SpiComponent {
-    spi_mux: &'static MuxSpiMaster<'static, sam4l::spi::SpiHw<'static>>,
+    spi_mux: &'static MuxSpiMaster<'static, sam4l::spi::SpiHw>,
 }
 
 impl SpiSyscallComponent {
@@ -38,7 +38,7 @@ impl SpiSyscallComponent {
 }
 
 impl Component for SpiSyscallComponent {
-    type Output = &'static Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw<'static>>>;
+    type Output = &'static Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>;
 
     unsafe fn finalize(&mut self) -> Self::Output {
         let syscall_spi_device = static_init!(
@@ -68,7 +68,7 @@ impl SpiComponent {
 }
 
 impl Component for SpiComponent {
-    type Output = &'static VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw<'static>>;
+    type Output = &'static VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>;
 
     unsafe fn finalize(&mut self) -> Self::Output {
         let spi_device = static_init!(

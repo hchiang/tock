@@ -27,8 +27,7 @@ use kernel::hil;
 use kernel::ReturnCode;
 use pm::{self, Clock, PBAClock};
 use scif;
-use kernel::hil::clock_pm::{ClockManager,ClockParams,ClockClient};
-use kernel::common::list::*;
+use kernel::hil::clock_pm::*;
 use clock_pm;
 use kernel::hil::adc::Adc as Adcimport;
 
@@ -107,7 +106,7 @@ pub trait EverythingClient: hil::adc::Client + hil::adc::HighSpeedClient {}
 impl<C: hil::adc::Client + hil::adc::HighSpeedClient> EverythingClient for C {}
 
 /// ADC driver code for the SAM4L.
-pub struct Adc<'a> {
+pub struct Adc {
     registers: StaticRef<AdcRegisters>,
 
     // state tracking for the ADC
@@ -140,12 +139,8 @@ pub struct Adc<'a> {
     callback_buffer: TakeCell<'static, [u16]>,
     callback_length: Cell<usize>,
 
-    // Clock manager
-    cm_enabled: Cell<bool>,
-    return_params: Cell<bool>,
-    clock_params: ClockParams,
-    has_lock: Cell<bool>,
-    next: ListLink<'a, ClockClient<'a>>,
+    // for interacting with clock manager
+    clock_client: ClockClientData,
 }
 
 /// Memory mapped registers for the ADC.
@@ -364,7 +359,7 @@ const BASE_ADDRESS: StaticRef<AdcRegisters> =
 pub static mut ADC0: Adc = Adc::new(BASE_ADDRESS, dma::DMAPeripheral::ADCIFE_RX);
 
 /// Functions for initializing the ADC.
-impl<'a> Adc<'a> {
+impl Adc {
     /// Create a new ADC driver.
     ///
     /// - `base_address`: pointer to the ADC's memory mapped I/O registers
@@ -372,7 +367,7 @@ impl<'a> Adc<'a> {
     const fn new(
         base_address: StaticRef<AdcRegisters>,
         rx_dma_peripheral: dma::DMAPeripheral,
-    ) -> Adc<'a> {
+    ) -> Adc {
         Adc {
             // pointer to memory mapped I/O registers
             registers: base_address,
@@ -408,11 +403,12 @@ impl<'a> Adc<'a> {
             callback_length: Cell::new(0),
 
             // clock manager
-            cm_enabled: Cell::new(false),
-            return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x00000110, 0, 48000000),
-            has_lock: Cell::new(false),
-            next: ListLink::empty(),
+            clock_client: ClockClientData {
+                cm_enabled: Cell::new(false),
+                client_index: Cell::new(0),
+                has_lock: Cell::new(false),
+                clock_params: ClockParams::new(0x00000110, 0, 48000000),
+            },
         }
     }
 
@@ -731,7 +727,7 @@ impl<'a> Adc<'a> {
 }
 
 /// Implements an ADC capable reading ADC samples on any channel.
-impl<'a> hil::adc::Adc for Adc<'a> {
+impl hil::adc::Adc for Adc {
     type Channel = AdcChannel;
 
     /// Capture a single analog sample, calling the client when complete.
@@ -908,10 +904,10 @@ impl<'a> hil::adc::Adc for Adc<'a> {
 
             self.disable();
 
-            if self.has_lock.get() {
-                self.has_lock.set(false);
+            if self.clock_client.has_lock.get() {
+                self.clock_client.has_lock.set(false);
                 unsafe {
-                    clock_pm::CM.unlock();
+                    clock_pm::CM.unlock(self.clock_client.client_index.get());
                 }
             }
 
@@ -953,7 +949,7 @@ impl<'a> hil::adc::Adc for Adc<'a> {
 }
 
 /// Implements an ADC capable of continuous sampling
-impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
+impl hil::adc::AdcHighSpeed for Adc {
 
     fn sample_highspeed_once(
         &self,
@@ -988,18 +984,10 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
             self.callback_buffer.replace(buffer);
             self.callback_length.set(length);
 
-            if self.cm_enabled.get() && !self.has_lock.get() {
-                self.return_params.set(true);
-                self.clock_params.min_frequency.set(frequency*32);
-                unsafe {
-                    if clock_pm::CM.need_clock_change(&self.clock_params){
-                        self.disable();
-                        clock_pm::CM.clock_change();
-                    }
-                    else {
-                        self.clock_updated(false);
-                    }
-                }
+            if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
+                self.clock_client.clock_params.min_frequency.set(frequency*32);
+                unsafe { clock_pm::CM.clock_change(self.clock_client.client_index.get(), 
+                    &self.clock_client.clock_params);}
             }
             else {
                 self.sample_highspeed_callback();
@@ -1176,7 +1164,7 @@ impl<'a> hil::adc::AdcHighSpeed for Adc<'a> {
 }
 
 /// Implements a client of a DMA.
-impl<'a> dma::DMAClient for Adc<'a> {
+impl dma::DMAClient for Adc {
     /// Handler for DMA transfer completion.
     ///
     /// - `pid`: the DMA peripheral that is complete
@@ -1197,7 +1185,7 @@ impl<'a> dma::DMAClient for Adc<'a> {
             let length = self.rx_length.get();
 
             //Is this a sample_highspeed or a sample_highspeed_once
-            if self.has_lock.get() {
+            if self.clock_client.has_lock.get() {
                 self.stop_sampling();
             }
             else {
@@ -1261,36 +1249,15 @@ impl<'a> dma::DMAClient for Adc<'a> {
     }
 }
 
-impl<'a> hil::clock_pm::ClockClient<'a> for Adc<'a> {
-    fn enable_cm(&self) {
-        self.cm_enabled.set(true);
+impl hil::clock_pm::ClockClient for Adc {
+    fn enable_cm(&self, client_index: usize) {
+        self.clock_client.cm_enabled.set(true);
+        self.clock_client.client_index.set(client_index);
     }
 
-    fn clock_updated(&self, _clock_changed: bool) {
-        if self.return_params.get() {
-            if !self.has_lock.get() {
-                unsafe {
-                    self.has_lock.set(clock_pm::CM.lock()); 
-                }
-                if !self.has_lock.get() {
-                    return;
-                }
-            }
-            self.return_params.set(false);
-
-            self.sample_highspeed_callback();
-        }
-    }
-
-    fn get_params(&self) -> Option<&ClockParams> {
-        if self.return_params.get() {
-            return Some(&self.clock_params);
-        }
-        None
-    }
-
-    fn next_link(&'a self) -> &'a ListLink<'a, ClockClient<'a> + 'a> {
-        &self.next
+    fn clock_updated(&self) {
+        self.clock_client.has_lock.set(true); 
+        self.sample_highspeed_callback();
     }
 }
 

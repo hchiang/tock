@@ -22,7 +22,7 @@ use kernel::component::Component;
 use sam4l;
 
 pub struct RF233Component {
-    spi: &'static VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw<'static>>,
+    spi: &'static VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>,
     reset: &'static hil::gpio::Pin,
     sleep: &'static hil::gpio::Pin,
     irq: &'static hil::gpio::Pin,
@@ -51,7 +51,7 @@ impl RF233Component {
 }
 
 impl Component for RF233Component {
-    type Output = &'static RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw<'static>>>;
+    type Output = &'static RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>;
 
     unsafe fn finalize(&mut self) -> Self::Output {
         let rf233: &RF233<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>> = static_init!(

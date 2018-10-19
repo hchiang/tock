@@ -20,7 +20,7 @@ use kernel::component::Component;
 use sam4l;
 
 pub struct Nrf51822Component {
-    uart: &'static sam4l::usart::USART<'static>,
+    uart: &'static sam4l::usart::USART,
     reset_pin: &'static sam4l::gpio::GPIOPin,
 }
 
@@ -38,7 +38,7 @@ impl Nrf51822Component {
 
 impl Component for Nrf51822Component {
     type Output =
-        &'static nrf51822_serialization::Nrf51822Serialization<'static, sam4l::usart::USART<'static>>;
+        &'static nrf51822_serialization::Nrf51822Serialization<'static, sam4l::usart::USART>;
 
     unsafe fn finalize(&mut self) -> Self::Output {
         sam4l::usart::USART2.set_mode(sam4l::usart::UsartMode::Uart);

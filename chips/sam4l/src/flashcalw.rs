@@ -31,8 +31,7 @@ use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
 use pm;
-use kernel::hil::clock_pm::{ClockManager,ClockParams,ClockClient};
-use kernel::common::list::*;
+use kernel::hil::clock_pm::*;
 use clock_pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
@@ -404,21 +403,16 @@ impl AsMut<[u8]> for Sam4lPage {
 }
 
 // The FLASHCALW controller
-pub struct FLASHCALW<'a> {
+pub struct FLASHCALW {
     registers: StaticRef<FlashcalwRegisters>,
     ahb_clock: pm::Clock,
     hramc1_clock: pm::Clock,
     pb_clock: pm::Clock,
-    client: OptionalCell<&'static hil::flash::Client<FLASHCALW<'static>>>,
+    client: OptionalCell<&'static hil::flash::Client<FLASHCALW>>,
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
 
-    cm_enabled: Cell<bool>,
-    return_params: Cell<bool>,
-    clock_params: ClockParams,
-    has_lock: Cell<bool>,
-    next: ListLink<'a, ClockClient<'a>>,
-    
+    clock_client: ClockClientData,
     read_callback_address: Cell<usize>,
     read_callback_size: Cell<usize>,
 }
@@ -446,13 +440,13 @@ const FREQ_PS1_FWS_0_MAX_FREQ: u32 = 8000000;
 #[cfg(not(CONFIG_FLASH_READ_MODE_HIGH_SPEED_DISABLE))]
 const FREQ_PS2_FWS_0_MAX_FREQ: u32 = 24000000;
 
-impl<'a> FLASHCALW<'a> {
+impl FLASHCALW {
     const fn new(
         registers: StaticRef<FlashcalwRegisters>,
         ahb_clk: pm::HSBClock,
         hramc1_clk: pm::HSBClock,
         pb_clk: pm::PBBClock,
-    ) -> FLASHCALW<'a> {
+    ) -> FLASHCALW {
         FLASHCALW {
             registers: registers,
             ahb_clock: pm::Clock::HSB(ahb_clk),
@@ -461,11 +455,12 @@ impl<'a> FLASHCALW<'a> {
             client: OptionalCell::empty(),
             current_state: Cell::new(FlashState::Unconfigured),
             buffer: TakeCell::empty(),
-            cm_enabled: Cell::new(false),
-            return_params: Cell::new(false),
-            clock_params: ClockParams::new(0x00000002, 1000000, 48000000),
-            has_lock: Cell::new(false),
-            next: ListLink::empty(),
+            clock_client: ClockClientData {
+                cm_enabled: Cell::new(false),
+                client_index: Cell::new(0),
+                has_lock: Cell::new(false),
+                clock_params: ClockParams::new(0x00000002, 1000000, 48000000),
+            },
             read_callback_address: Cell::new(0),
             read_callback_size: Cell::new(0),
         }
@@ -549,10 +544,10 @@ impl<'a> FLASHCALW<'a> {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
-                if self.cm_enabled.get() && self.has_lock.get() {
-                    self.has_lock.set(false);
+                if self.clock_client.has_lock.get() {
+                    self.clock_client.has_lock.set(false);
                     unsafe {
-                        clock_pm::CM.unlock();
+                        clock_pm::CM.unlock(self.clock_client.client_index.get());
                     }                
                 }
 
@@ -564,17 +559,10 @@ impl<'a> FLASHCALW<'a> {
 
             }
             FlashState::WriteUnlocking { page } => {
-                if self.cm_enabled.get() && !self.has_lock.get() {
-                    self.return_params.set(true);
-                    self.clock_params.clocklist.set(0x0004);
-                    unsafe {
-                        if clock_pm::CM.need_clock_change(&self.clock_params){
-                            clock_pm::CM.clock_change();
-                        }
-                        else {
-                            self.clock_updated(false);
-                        }
-                    }
+                if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
+                    self.clock_client.clock_params.clocklist.set(0x0004);
+                    unsafe {clock_pm::CM.clock_change(self.clock_client.client_index.get(),
+                        &self.clock_client.clock_params);}
                     return;
                 }    
                 self.current_state.set(FlashState::WriteErasing { page: page });
@@ -597,10 +585,10 @@ impl<'a> FLASHCALW<'a> {
 
                 self.current_state.set(FlashState::Ready);
 
-                if self.cm_enabled.get() && self.has_lock.get() {
-                    self.has_lock.set(false);
+                if self.clock_client.has_lock.get() {
+                    self.clock_client.has_lock.set(false);
                     unsafe {
-                        clock_pm::CM.unlock();
+                        clock_pm::CM.unlock(self.clock_client.client_index.get());
                     }                
                 }
 
@@ -611,17 +599,10 @@ impl<'a> FLASHCALW<'a> {
                 });
             }
             FlashState::EraseUnlocking { page } => {
-                if self.cm_enabled.get() && !self.has_lock.get() {
-                    self.return_params.set(true);
-                    self.clock_params.clocklist.set(0x0004);
-                    unsafe {
-                        if clock_pm::CM.need_clock_change(&self.clock_params){
-                            clock_pm::CM.clock_change();
-                        }
-                        else {
-                            self.clock_updated(false);
-                        }
-                    }
+                if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
+                    self.clock_client.clock_params.clocklist.set(0x0004);
+                    unsafe {clock_pm::CM.clock_change(self.clock_client.client_index.get(),
+                        &self.clock_client.clock_params);}
                     return;
                 }    
                 self.current_state.set(FlashState::EraseErasing);
@@ -630,10 +611,10 @@ impl<'a> FLASHCALW<'a> {
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
 
-                if self.cm_enabled.get() && self.has_lock.get() {
-                    self.has_lock.set(false);
+                if self.clock_client.has_lock.get() {
+                    self.clock_client.has_lock.set(false);
                     unsafe {
-                        clock_pm::CM.unlock();
+                        clock_pm::CM.unlock(self.clock_client.client_index.get());
                     }                
                 }
 
@@ -867,7 +848,7 @@ impl<'a> FLASHCALW<'a> {
 }
 
 // Implementation of high level calls using the low-lv functions.
-impl<'a> FLASHCALW<'a> {
+impl FLASHCALW {
     pub fn configure(&mut self) {
         let regs: &FlashcalwRegisters = &*self.registers;
 
@@ -927,17 +908,10 @@ impl<'a> FLASHCALW<'a> {
         self.buffer.replace(buffer);
 
         self.current_state.set(FlashState::Read);
-        if self.cm_enabled.get() && !self.has_lock.get() {
-            self.return_params.set(true);
-            self.clock_params.clocklist.set(0x40);
-            unsafe {
-                if clock_pm::CM.need_clock_change(&self.clock_params){
-                    clock_pm::CM.clock_change();
-                }
-                else {
-                    self.clock_updated(false);
-                }
-            }
+        if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
+            self.clock_client.clock_params.clocklist.set(0x40);
+            unsafe {clock_pm::CM.clock_change(self.clock_client.client_index.get(),
+                &self.clock_client.clock_params);}
         }    
         else {
             self.callback_read_range(); 
@@ -1002,13 +976,13 @@ impl<'a> FLASHCALW<'a> {
     }
 }
 
-impl<C: hil::flash::Client<Self>> hil::flash::HasClient<'static, C> for FLASHCALW<'static> {
+impl<C: hil::flash::Client<Self>> hil::flash::HasClient<'static, C> for FLASHCALW {
     fn set_client(&self, client: &'static C) {
         self.client.set(client);
     }
 }
 
-impl<'a> hil::flash::Flash for FLASHCALW<'a> {
+impl<'a> hil::flash::Flash for FLASHCALW {
     type Page = Sam4lPage;
 
     fn read_page(&self, page_number: usize, buf: &'static mut Self::Page) -> ReturnCode {
@@ -1024,41 +998,18 @@ impl<'a> hil::flash::Flash for FLASHCALW<'a> {
     }
 }
 
-impl<'a> hil::clock_pm::ClockClient<'a> for FLASHCALW<'a> {
-    fn enable_cm(&self) {
-        self.cm_enabled.set(true);
+impl hil::clock_pm::ClockClient for FLASHCALW {
+    fn enable_cm(&self, client_index: usize) {
+        self.clock_client.cm_enabled.set(true);
+        self.clock_client.client_index.set(client_index);
     }
 
-    fn clock_updated(&self, _clock_changed: bool) {
-        if self.return_params.get() {
-            if !self.has_lock.get() {
-                unsafe {
-                    self.has_lock.set(clock_pm::CM.lock());
-                }
-                //It should always be able to get the lock in clock_updated
-                if !self.has_lock.get() {
-                    return;
-                }
-            } 
-            self.return_params.set(false);
-
-            match self.current_state.get() {
-                FlashState::Read => self.callback_read_range(),
-                FlashState::WriteUnlocking {..} | FlashState::EraseUnlocking {..} => self.match_state(),
-                _ => {} 
-            }
+    fn clock_updated(&self) {
+        match self.current_state.get() {
+            FlashState::Read => self.callback_read_range(),
+            FlashState::WriteUnlocking {..} | FlashState::EraseUnlocking {..} => self.match_state(),
+            _ => {} 
         }
-    }
-
-    fn get_params(&self) -> Option<&ClockParams> {
-        if self.return_params.get() {
-            return Some(&self.clock_params);
-        }
-        None
-    }
-
-    fn next_link(&'a self) -> &'a ListLink<'a, ClockClient<'a> + 'a> {
-        &self.next
     }
 }
 
