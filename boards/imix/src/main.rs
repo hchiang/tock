@@ -34,6 +34,7 @@ use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::spi::SpiMaster;
 use kernel::hil::Controller;
 use kernel::hil::clock_pm::ClockManager;
+use kernel::Chip;
 
 use components::adc::AdcComponent;
 use components::alarm::AlarmDriverComponent;
@@ -122,7 +123,7 @@ static mut PROCESSES: [Option<&'static kernel::procs::ProcessType>; NUM_PROCS] =
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
-pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
+pub static mut STACK_MEMORY: [u8; 0x2000] = [0; 0x2000];
 
 struct Imix {
     console: &'static capsules::console::Console<'static, UartDevice<'static>>,
@@ -391,8 +392,6 @@ pub unsafe fn reset_handler() {
     let usb_driver = UsbComponent::new(board_kernel).finalize();
     let nonvolatile_storage = NonvolatileStorageComponent::new(board_kernel).finalize();
 
-    // ** UDP **
-
     let udp_driver = UDPComponent::new(
         board_kernel,
         mux_mac,
@@ -401,6 +400,7 @@ pub unsafe fn reset_handler() {
         DST_MAC_ADDR,
         SRC_MAC_ADDR,
         &LOCAL_IP_IFACES,
+        mux_alarm,
     ).finalize();
 
     sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
@@ -430,7 +430,7 @@ pub unsafe fn reset_handler() {
         nonvolatile_storage: nonvolatile_storage,
     };
 
-    let chip = sam4l::chip::Sam4l::new();
+    let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
 
     // Need to reset the nRF on boot, toggle it's SWDIO
     imix.nrf51822.reset();
@@ -454,6 +454,7 @@ pub unsafe fn reset_handler() {
     kernel::procs::load_processes(
         board_kernel,
         &cortexm4::syscall::SysCall::new(),
+        chip.mpu(),
         &_sapps as *const u8,
         &mut APP_MEMORY,
         &mut PROCESSES,
@@ -461,5 +462,5 @@ pub unsafe fn reset_handler() {
         &process_mgmt_cap,
     );
 
-    board_kernel.kernel_loop(&imix, &chip, Some(&imix.ipc), &main_cap);
+    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap);
 }
