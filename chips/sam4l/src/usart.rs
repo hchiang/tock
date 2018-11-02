@@ -618,6 +618,7 @@ impl USART {
     }
 
     pub fn handle_interrupt(&self) {
+        //TODO this never gets called
         let usart = &USARTRegManager::new(&self);
 
         let status = usart.registers.csr.extract();
@@ -636,7 +637,6 @@ impl USART {
             if self.clock_client.has_lock() && self.callback_rx_len.get() == 0 {
                 self.clock_client.set_has_lock(false);
                 unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
-                debug_gpio!(1,toggle);
             }
 
             // Now that we know the TX transaction is finished we can get the
@@ -773,7 +773,6 @@ impl USART {
     }
 
     fn transmit_callback(&self) {
-        debug_gpio!(2, toggle);
         let usart = &USARTRegManager::new(&self);
 
         // quit current transmission if any
@@ -946,7 +945,6 @@ impl hil::uart::UART for USART {
     }
 
     fn transmit(&self, tx_data: &'static mut [u8], tx_len: usize) {
-        debug_gpio!(0,toggle);
         self.callback_tx_data.replace(tx_data);
         self.callback_tx_len.set(tx_len);
         if self.clock_client.enabled() && !self.clock_client.has_lock() {
@@ -1228,10 +1226,10 @@ impl hil::clock_pm::ClockClient for USART {
     fn enable_cm(&self, client_index: usize) {
         self.clock_client.set_enabled(true);
         self.clock_client.set_client_index(client_index);
+        unsafe { clock_pm::CM.set_clocklist(client_index, 0x04); }
     }
 
     fn clock_updated(&self) {
-        debug_gpio!(1,toggle);
         self.clock_client.set_has_lock(true); 
         //TODO calculate clock change
         let usart = &USARTRegManager::new(&self);

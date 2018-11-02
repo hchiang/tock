@@ -15,6 +15,7 @@ pub struct ImixClockManager<'a> {
     lock_count: Cell<u32>,
 }
 
+//TODO bitmask
 impl ImixClockManager<'a> {
 
     fn freq_clockmask(&self, min_freq: u32, max_freq: u32) -> u32 {
@@ -96,6 +97,7 @@ impl ImixClockManager<'a> {
         let mut clockmask: u32 = 0xffffffff;
         self.change_clock.set(false);
 
+        //TODO first check clients that don't hold lock
         for _i in 0..self.num_clients.get() { 
             let next_client = self.next_client.get();
             if !self.clients[next_client].get_enabled() {
@@ -165,7 +167,10 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
-        // TODO if lock not taken, what about incompatible clock case?
+        if self.clients[client_index].get_enabled() {
+            return ReturnCode::SUCCESS;
+        }
+
         self.clients[client_index].set_enabled(true);
         if self.clients[client_index].get_clockmask() & self.current_clock.get() == 0 {
             self.change_clock.set(true);
@@ -185,6 +190,10 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
+        if !self.clients[client_index].get_enabled() {
+            return ReturnCode::SUCCESS;
+        }
+
         self.clients[client_index].set_enabled(false);
         self.lock_count.set(self.lock_count.get()-1);
         if self.lock_count.get() == 0 {
