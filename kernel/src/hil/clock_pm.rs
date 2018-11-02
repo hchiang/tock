@@ -58,7 +58,6 @@ impl ClockClientData {
 //    }
 //}
 
-#[derive(Default)]
 pub struct ClockData<'a> {
     client: OptionalCell<&'a ClockClient>,
     enabled: Cell<bool>,

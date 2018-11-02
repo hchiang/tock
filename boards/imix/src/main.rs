@@ -403,10 +403,13 @@ pub unsafe fn reset_handler() {
         mux_alarm,
     ).finalize();
 
+    sam4l::clock_pm::CM.register(&sam4l::usart::USART0);
+    sam4l::clock_pm::CM.register(&sam4l::usart::USART1);
+    sam4l::clock_pm::CM.register(&sam4l::usart::USART2);
     sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
-    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
-    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
-    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    //sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
         console,
