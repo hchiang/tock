@@ -600,15 +600,14 @@ impl PowerManager {
         match clock_source {
             SystemClockSource::RcsysAt115kHz => {
                 // Set wait state
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
-                // Change the system clock to RCSYS
                 select_main_clock(MainClock::RCSYS);
                 // no configurations necessary, RCSYS is always on
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
+                // Change the system clock to RCSYS
             }
 
             SystemClockSource::DfllRc32kAt48MHz => {
                 // Configure and turn on DFLL at 48MHz
-                debug_gpio!(1,set);
                 configure_48mhz_dfll();
                 // Set Flash wait state to 1 for > 24MHz in PS2
                 flashcalw::FLASH_CONTROLLER.set_wait_state(1);
@@ -635,10 +634,10 @@ impl PowerManager {
                 }
                 // Configure and turn on OSC0
                 configure_external_oscillator(frequency, startup_mode);
-                // Set Flash wait state to 0 for <= 24MHz in PS2
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to OSC0
                 select_main_clock(MainClock::OSC0);
+                // Set Flash wait state to 0 for <= 24MHz in PS2
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
             }
 
             SystemClockSource::PllExternalOscillatorAt48MHz {
@@ -674,7 +673,6 @@ impl PowerManager {
             }
 
             SystemClockSource::RCFAST { frequency } => {
-                debug_gpio!(2,set);
                 // Check if RCFAST is already on, in which case temporarily switch the system to RCSYS
                 // since RCFAST has to be disabled before its configurations can be changed
                 if (PM.system_on_clocks.get() & (ClockMask::RCFAST as u32)) != 0 {
@@ -693,14 +691,13 @@ impl PowerManager {
 
                 // Configure and turn on RCFAST at specified frequency
                 configure_rcfast(frequency);
-                // Set Flash wait state to 0 for <= 24MHz in PS2
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to RCFAST
                 select_main_clock(MainClock::RCFAST);
+                // Set Flash wait state to 0 for <= 24MHz in PS2
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
             }
 
             SystemClockSource::RC1M => {
-                debug_gpio!(0,set);
                 match self.system_clock_source.get() {
                     SystemClockSource::DfllRc32kAt48MHz => {
                         select_main_clock(MainClock::RCSYS);
@@ -710,10 +707,10 @@ impl PowerManager {
 
                 // Configure and turn on RC1M
                 configure_1mhz_rc();
-                // Set Flash wait state to 0 for <= 24MHz in PS2
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to RC1M
                 select_main_clock(MainClock::RC1M);
+                // Set Flash wait state to 0 for <= 24MHz in PS2
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
             }
         }
 
@@ -753,7 +750,6 @@ impl PowerManager {
 
             SystemClockSource::DfllRc32kAt48MHz => {
                 // Disable DFLL
-                debug_gpio!(1,clear);
                 scif::disable_dfll_rc32k();
                 let clock_mask = self.system_on_clocks.get();
                 self.system_on_clocks
@@ -816,7 +812,6 @@ impl PowerManager {
             }
 
             SystemClockSource::RCFAST { .. } => {
-                debug_gpio!(2,clear);
                 // Disable RCFAST
                 scif::disable_rcfast();
                 let clock_mask = self.system_on_clocks.get();
@@ -826,7 +821,6 @@ impl PowerManager {
 
             SystemClockSource::RC1M => {
                 // Disable RC1M
-                debug_gpio!(0,clear);
                 bscif::disable_rc_1mhz();
                 let clock_mask = self.system_on_clocks.get();
                 self.system_on_clocks

@@ -403,12 +403,7 @@ impl Adc {
             callback_length: Cell::new(0),
 
             // clock manager
-            clock_client: ClockClientData {
-                cm_enabled: Cell::new(false),
-                client_index: Cell::new(0),
-                has_lock: Cell::new(false),
-                clock_params: ClockParams::new(0x00000110, 0, 48000000),
-            },
+            clock_client: ClockClientData::new(false,99,false),
         }
     }
 
@@ -904,11 +899,9 @@ impl hil::adc::Adc for Adc {
 
             self.disable();
 
-            if self.clock_client.has_lock.get() {
-                self.clock_client.has_lock.set(false);
-                unsafe {
-                    clock_pm::CM.unlock(self.clock_client.client_index.get());
-                }
+            if self.clock_client.has_lock() {
+                self.clock_client.set_has_lock(false);
+                unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
             }
 
             // stop DMA transfer if going. This should safely return a None if
@@ -984,10 +977,10 @@ impl hil::adc::AdcHighSpeed for Adc {
             self.callback_buffer.replace(buffer);
             self.callback_length.set(length);
 
-            if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
-                self.clock_client.clock_params.min_frequency.set(frequency*32);
-                unsafe { clock_pm::CM.clock_change(self.clock_client.client_index.get(), 
-                    &self.clock_client.clock_params);}
+            if self.clock_client.enabled() && !self.clock_client.has_lock() {
+                unsafe { 
+                    clock_pm::CM.set_min_frequency(self.clock_client.client_index(), frequency*32);
+                    clock_pm::CM.enable_clock(self.clock_client.client_index()); }
             }
             else {
                 self.sample_highspeed_callback();
@@ -1185,7 +1178,7 @@ impl dma::DMAClient for Adc {
             let length = self.rx_length.get();
 
             //Is this a sample_highspeed or a sample_highspeed_once
-            if self.clock_client.has_lock.get() {
+            if self.clock_client.has_lock() {
                 self.stop_sampling();
             }
             else {
@@ -1251,12 +1244,12 @@ impl dma::DMAClient for Adc {
 
 impl hil::clock_pm::ClockClient for Adc {
     fn enable_cm(&self, client_index: usize) {
-        self.clock_client.cm_enabled.set(true);
-        self.clock_client.client_index.set(client_index);
+        self.clock_client.set_enabled(true);
+        self.clock_client.set_client_index(client_index);
     }
 
     fn clock_updated(&self) {
-        self.clock_client.has_lock.set(true); 
+        self.clock_client.set_has_lock(true); 
         self.sample_highspeed_callback();
     }
 }

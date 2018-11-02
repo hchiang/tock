@@ -460,12 +460,7 @@ impl USART {
             spi_chip_select: OptionalCell::empty(),
             baud_rate: Cell::new(0),
 
-            clock_client: ClockClientData {
-                cm_enabled: Cell::new(false),
-                client_index: Cell::new(0),
-                has_lock: Cell::new(false),
-                clock_params: ClockParams::new(0x00000004, 1000000, 48000000),
-            },
+            clock_client: ClockClientData::new(false, 99, false),
 
             callback_tx_data: TakeCell::empty(),
             callback_tx_len: Cell::new(0),
@@ -638,11 +633,10 @@ impl USART {
 
             self.callback_tx_len.set(0);
 
-            if self.clock_client.has_lock.get() && self.callback_rx_len.get() == 0 {
-                self.clock_client.has_lock.set(false);
-                unsafe {
-                    clock_pm::CM.unlock(self.clock_client.client_index.get());
-                }
+            if self.clock_client.has_lock() && self.callback_rx_len.get() == 0 {
+                self.clock_client.set_has_lock(false);
+                unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
+                debug_gpio!(1,toggle);
             }
 
             // Now that we know the TX transaction is finished we can get the
@@ -715,7 +709,8 @@ impl USART {
         match self.usart_mode.get() {
             UsartMode::Uart => {
                 let uart_baud_rate = 8 * baud_rate;
-                self.clock_client.clock_params.min_frequency.set(uart_baud_rate);
+                unsafe { clock_pm::CM.set_min_frequency(
+                    self.clock_client.client_index(), uart_baud_rate); }
                 let cd = system_frequency / uart_baud_rate;
                 //Generate fractional part
                 let fp = (system_frequency + baud_rate / 2) / baud_rate - 8 * cd;
@@ -778,6 +773,7 @@ impl USART {
     }
 
     fn transmit_callback(&self) {
+        debug_gpio!(2, toggle);
         let usart = &USARTRegManager::new(&self);
 
         // quit current transmission if any
@@ -840,11 +836,9 @@ impl dma::DMAClient for USART{
                     self.usart_rx_state.set(USARTStateRX::Idle);
 
                     self.callback_rx_len.set(0);
-                    if self.clock_client.has_lock.get() && self.callback_tx_len.get() == 0 {
-                        self.clock_client.has_lock.set(false);
-                        unsafe {
-                            clock_pm::CM.unlock(self.clock_client.client_index.get());
-                        }
+                    if self.clock_client.has_lock() && self.callback_tx_len.get() == 0 {
+                        self.clock_client.set_has_lock(false);
+                        unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
                     }
 
                     // get buffer
@@ -952,11 +946,11 @@ impl hil::uart::UART for USART {
     }
 
     fn transmit(&self, tx_data: &'static mut [u8], tx_len: usize) {
+        debug_gpio!(0,toggle);
         self.callback_tx_data.replace(tx_data);
         self.callback_tx_len.set(tx_len);
-        if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
-            unsafe {clock_pm::CM.clock_change(self.clock_client.client_index.get(),
-                &self.clock_client.clock_params);}
+        if self.clock_client.enabled() && !self.clock_client.has_lock() {
+            unsafe { clock_pm::CM.enable_clock(self.clock_client.client_index()); }
         } 
         else {
             self.transmit_callback();
@@ -966,9 +960,8 @@ impl hil::uart::UART for USART {
     fn receive(&self, rx_buffer: &'static mut [u8], rx_len: usize) {
         self.callback_rx_data.replace(rx_buffer);
         self.callback_rx_len.set(rx_len);
-        if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
-            unsafe {clock_pm::CM.clock_change(self.clock_client.client_index.get(),
-                &self.clock_client.clock_params);}
+        if self.clock_client.enabled() && !self.clock_client.has_lock() {
+            unsafe { clock_pm::CM.enable_clock(self.clock_client.client_index()); }
         }
         else {
             self.receive_callback();
@@ -1233,17 +1226,17 @@ impl hil::spi::SpiMaster for USART {
 
 impl hil::clock_pm::ClockClient for USART {
     fn enable_cm(&self, client_index: usize) {
-        self.clock_client.cm_enabled.set(true);
-        self.clock_client.client_index.set(client_index);
+        self.clock_client.set_enabled(true);
+        self.clock_client.set_client_index(client_index);
     }
 
     fn clock_updated(&self) {
+        debug_gpio!(1,toggle);
+        self.clock_client.set_has_lock(true); 
         //TODO calculate clock change
-        //if clock_changed {
-        //    let usart = &USARTRegManager::new(&self);
-        //    self.reset(usart);
-        //    self.set_baud_rate(usart, self.baud_rate.get());
-        //}
+        let usart = &USARTRegManager::new(&self);
+        self.reset(usart);
+        self.set_baud_rate(usart, self.baud_rate.get());
 
         if self.callback_rx_len.get() > 0 {
             self.receive_callback();

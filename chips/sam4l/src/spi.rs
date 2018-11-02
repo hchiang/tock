@@ -253,14 +253,7 @@ impl SpiHw {
             callback_write_buffer: TakeCell::empty(),
             callback_len: Cell::new(0),
 
-            clock_client: ClockClientData {
-                cm_enabled: Cell::new(false),
-                client_index: Cell::new(0),
-                has_lock: Cell::new(false),
-                //TODO: spi doesn't work with RC1M, RCFAST, or EXTOSC
-                // spi should work with EXTOSC
-                clock_params: ClockParams::new(0x000001c0, 0, 48000000),
-            }
+            clock_client: ClockClientData::new(false, 99, false),
         }
     }
 
@@ -332,8 +325,10 @@ impl SpiHw {
         //TODO rate appears to be 100000 when set to 400000
         if rate != self.baud_rate.get() {
             self.baud_rate.set(rate);
-            self.clock_client.clock_params.min_frequency.set(rate);
-            self.clock_client.clock_params.max_frequency.set(rate*255);
+            unsafe { 
+                clock_pm::CM.set_min_frequency(self.clock_client.client_index(), rate);
+                clock_pm::CM.set_max_frequency(self.clock_client.client_index(), rate*255);
+            }
         }
 
         if real_rate < 188235 {
@@ -524,9 +519,8 @@ impl SpiHw {
             None => self.callback_write_buffer.put(None),
         }
 
-        if self.clock_client.cm_enabled.get() && !self.clock_client.has_lock.get() {
-            unsafe {clock_pm::CM.clock_change(self.clock_client.client_index.get(),
-                &self.clock_client.clock_params);}
+        if self.clock_client.enabled() && !self.clock_client.has_lock() {
+            unsafe { clock_pm::CM.enable_clock(self.clock_client.client_index()); }
         }
         else {
             self.read_write_callback();
@@ -767,11 +761,9 @@ impl DMAClient for SpiHw {
             self.dma_length.set(0);
 
 
-            if self.clock_client.cm_enabled.get() && self.clock_client.has_lock.get() {
-                self.clock_client.has_lock.set(false);
-                unsafe {
-                    clock_pm::CM.unlock(self.clock_client.client_index.get());
-                }
+            if self.clock_client.enabled() && self.clock_client.has_lock() {
+                self.clock_client.set_has_lock(false);
+                unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
             }
 
             match self.role.get() {
@@ -794,11 +786,14 @@ impl DMAClient for SpiHw {
 
 impl ClockClient for SpiHw {
     fn enable_cm(&self, client_index: usize) {
-        self.clock_client.cm_enabled.set(true);
-        self.clock_client.client_index.set(client_index);
+        self.clock_client.set_enabled(true);
+        self.clock_client.set_client_index(client_index);
+        //TODO: spi doesn't work with RC1M, RCFAST, or EXTOSC
+        // spi should work with EXTOSC
     }
 
     fn clock_updated(&self) {
+        self.clock_client.set_has_lock(true);
         //TODO
         //if clock_changed {
         //    self.set_baud_rate(self.baud_rate.get());
