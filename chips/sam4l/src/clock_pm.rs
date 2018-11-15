@@ -120,6 +120,7 @@ impl ImixClockManager<'a> {
         for i in 0..NUM_CLOCK_SOURCES {
             if (clockmask >> i) & 0b1 == 1{
                 clock = 1 << i;
+                break;
             } 
         }
         let clock_changed = self.current_clock.get() != clock;

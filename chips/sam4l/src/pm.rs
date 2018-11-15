@@ -833,7 +833,7 @@ impl PowerManager {
     // the previous system clock
     pub unsafe fn change_system_clock(&self, clock_source: SystemClockSource) {
         // If the clock you want to switch to is the current system clock, do nothing
-        let prev_clock_source = PM.system_clock_source.get();
+        let prev_clock_source = self.system_clock_source.get();
         if prev_clock_source == clock_source {
             return;
         }
