@@ -14,8 +14,8 @@ pub struct ClockClientData {
     enabled: Cell<bool>,
     client_index: Cell<usize>,
     lock: Cell<bool>,
-    //clock_params: ClockParams,
 }
+
 impl ClockClientData {
     pub const fn new(enabled: bool, client_index: usize, has_lock: bool) -> ClockClientData {
         ClockClientData {
@@ -39,17 +39,19 @@ impl ClockClientData {
 pub struct ClockData<'a> {
     client: OptionalCell<&'a ClockClient>,
     enabled: Cell<bool>,
-    //need_lock: Cell<bool>,
+    need_lock: Cell<bool>,
     clockmask: Cell<u32>,
     clocklist: Cell<u32>,
     min_freq: Cell<u32>,
     max_freq: Cell<u32>,
 }
+
 impl ClockData<'a>{
     pub const fn new() -> ClockData<'a> {
         ClockData{
             client: OptionalCell::empty(),
             enabled: Cell::new(false),
+            need_lock: Cell::new(true),
             clockmask: Cell::new(0x3ff),
             clocklist: Cell::new(0x3ff),
             min_freq: Cell::new(0),
@@ -59,6 +61,7 @@ impl ClockData<'a>{
     pub fn initialize(&self, client: &'a ClockClient) {
         self.client.set(client);
         self.enabled.set(false);
+        self.need_lock.set(true);
         self.clockmask.set(0x3ff);
         self.clocklist.set(0x3ff);
         self.min_freq.set(0);
@@ -78,6 +81,9 @@ impl ClockData<'a>{
     pub fn get_enabled(&self) -> bool {
         self.enabled.get()
     }
+    pub fn get_need_lock(&self) -> bool {
+        self.need_lock.get()
+    }
     pub fn get_clockmask(&self) -> u32 {
         self.clockmask.get()
     }
@@ -92,6 +98,9 @@ impl ClockData<'a>{
     }
     pub fn set_enabled(&self, enabled: bool) {
         self.enabled.set(enabled);
+    }
+    pub fn set_need_lock(&self, need_lock: bool) {
+        self.need_lock.set(need_lock);
     }
     pub fn set_clockmask(&self, clockmask: u32) {
         self.clockmask.set(clockmask);
@@ -116,10 +125,12 @@ pub trait ClockManager<'a> {
     fn disable_clock(&self, client_index: usize) -> ReturnCode;
 
     /// Accesssors for current ClockParams state
+    fn set_need_lock(&self, client_index: usize, need_lock: bool) -> ReturnCode;
     fn set_clocklist(&self, client_index: usize, clocklist: u32) -> ReturnCode;
     fn set_min_frequency(&self, client_index: usize, min_freq: u32) -> ReturnCode;
     fn set_max_frequency(&self, client_index: usize, max_freq: u32) -> ReturnCode;
 
+    fn get_need_lock(&self, client_index: usize) -> Result<bool, ReturnCode>;
     fn get_clocklist(&self, client_index: usize) -> Result<u32, ReturnCode>;
     fn get_min_frequency(&self, client_index: usize) -> Result<u32, ReturnCode>;
     fn get_max_frequency(&self, client_index: usize) -> Result<u32, ReturnCode>;

@@ -6,6 +6,16 @@ use pm;
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
 
+const RC1M: u32         = 0x002; 
+const RCFAST4M: u32     = 0x004; 
+const RCFAST8M: u32     = 0x008;    
+const RCFAST12M: u32    = 0x010; 
+const EXTOSC: u32       = 0x020; 
+const DFLL: u32         = 0x040; 
+const PLL: u32          = 0x080; 
+const RC80M: u32        = 0x100; 
+const RCSYS: u32        = 0x200; 
+
 pub struct ImixClockManager<'a> {
     clients: [ClockData<'a>; NUM_CLOCK_CLIENTS],
     num_clients: Cell<usize>,
@@ -15,7 +25,6 @@ pub struct ImixClockManager<'a> {
     lock_count: Cell<u32>,
 }
 
-//TODO bitmask
 impl ImixClockManager<'a> {
 
     fn freq_clockmask(&self, min_freq: u32, max_freq: u32) -> u32 {
@@ -23,49 +32,37 @@ impl ImixClockManager<'a> {
             return 0;
         }
 
-        let min_clockmask: u32;
-        let max_clockmask: u32;
+        let mut clockmask: u32 = 0;
 
-        if min_freq <= 115200 { 
-            min_clockmask = 0x3fe;
-        } else if min_freq <= 1000000 { 
-            min_clockmask = 0x1fe;
-        } else if min_freq <= 4300000 { 
-            min_clockmask = 0x1fc;
-        } else if min_freq <= 8200000 { 
-            min_clockmask = 0x1f8;
-        } else if min_freq <= 12000000 { 
-            min_clockmask = 0x1f0;
-        } else if min_freq <= 1600000 { 
-            min_clockmask = 0x1e0;
-        } else if min_freq <= 40000000 { 
-            min_clockmask = 0x1c0;
-        } else {
-            min_clockmask = 0x0c0;
+        if min_freq <= 115200 && max_freq >= 115200 { 
+            clockmask |= RCSYS;
+        } 
+        if min_freq <= 1000000 && max_freq >= 1000000 { 
+            clockmask |= RC1M;
+        }
+        if min_freq <= 4300000 && max_freq >= 4300000 { 
+            clockmask |= RCFAST4M;
+        } 
+        if min_freq <= 8200000 && max_freq >= 8200000 { 
+            clockmask |= RCFAST8M;
+        }
+        if min_freq <= 12000000 && max_freq >= 12000000 { 
+            clockmask |= RCFAST12M;
+        }
+        if min_freq <= 16000000 && max_freq >= 16000000 { 
+            clockmask |= EXTOSC;
+        }
+        if min_freq <= 48000000 && max_freq >= 20000000 { 
+            clockmask |= DFLL;
+        }
+        if min_freq <= 48000000 && max_freq >= 48000000 { 
+            clockmask |= PLL;
+        }
+        if min_freq <= 40000000 && max_freq >= 40000000 { 
+            clockmask |= RC80M;
         }
 
-        if max_freq >= 48000000 {
-            max_clockmask = 0x3fe;
-        } else if max_freq >= 40000000 {
-            max_clockmask = 0x37e;
-        } else if max_freq >= 20000000 {
-            max_clockmask = 0x27e;
-        } else if max_freq >= 16000000 {
-            max_clockmask = 0x23e;
-        } else if max_freq >= 12000000 {
-            max_clockmask = 0x21e;
-        } else if max_freq >= 8200000 {
-            max_clockmask = 0x20e;
-        } else if max_freq >= 4300000 {
-            max_clockmask = 0x206;
-        } else if max_freq >= 1000000 {
-            max_clockmask = 0x202;
-        } else {
-            max_clockmask = 0x200;
-        }
-
-        return min_clockmask & max_clockmask;
-    
+        return clockmask;
     }
 
     fn convert_to_clock(&self, clock: u32) -> pm::SystemClockSource {
@@ -203,6 +200,14 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         return ReturnCode::SUCCESS;
     }
 
+    fn set_need_lock(&self, client_index: usize, need_lock: bool) -> ReturnCode {
+        if client_index >= self.num_clients.get() {
+            return ReturnCode::EINVAL;
+        }
+        self.clients[client_index].set_need_lock(need_lock);
+        return ReturnCode::SUCCESS;
+    }
+
     fn set_clocklist(&self, client_index: usize, clocklist: u32) -> ReturnCode {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -228,6 +233,12 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         return ReturnCode::SUCCESS;
     }
     
+    fn get_need_lock(&self, client_index: usize) -> Result<bool, ReturnCode> {
+        if client_index >= self.num_clients.get() {
+            return Err(ReturnCode::EINVAL);
+        }
+        return Ok(self.clients[client_index].get_need_lock());
+    }
     fn get_clocklist(&self, client_index: usize) -> Result<u32, ReturnCode> {
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);

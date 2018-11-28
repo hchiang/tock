@@ -618,7 +618,6 @@ impl USART {
     }
 
     pub fn handle_interrupt(&self) {
-        //TODO this never gets called
         let usart = &USARTRegManager::new(&self);
 
         let status = usart.registers.csr.extract();
@@ -634,6 +633,9 @@ impl USART {
 
             self.callback_tx_len.set(0);
 
+            //TODO console never stops receiving - no CTS line
+            // turn off clock management when debug line is connected
+            // only use for USART0 and USART2 (nrf)
             if self.clock_client.has_lock() && self.callback_rx_len.get() == 0 {
                 self.clock_client.set_has_lock(false);
                 unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
@@ -1226,14 +1228,13 @@ impl hil::clock_pm::ClockClient for USART {
     fn enable_cm(&self, client_index: usize) {
         self.clock_client.set_enabled(true);
         self.clock_client.set_client_index(client_index);
-        unsafe { clock_pm::CM.set_clocklist(client_index, 0x04); }
+        unsafe { clock_pm::CM.set_clocklist(client_index, 0x40); }
     }
 
     fn clock_updated(&self) {
         self.clock_client.set_has_lock(true); 
-        //TODO calculate clock change
+
         let usart = &USARTRegManager::new(&self);
-        self.reset(usart);
         self.set_baud_rate(usart, self.baud_rate.get());
 
         if self.callback_rx_len.get() > 0 {
