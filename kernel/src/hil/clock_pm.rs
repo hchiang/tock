@@ -2,14 +2,17 @@ use core::cell::Cell;
 use common::cells::OptionalCell;
 use returncode::ReturnCode;
 
+/// Implemented by each peripheral
 pub trait ClockClient {
     /// This function will by called by ClockManager's register function 
     ///     Indicates the peripheral should turn on clock management
+    ///     The peripheral needs to keep track of client_index
     fn enable_cm(&self, client_index: usize);
     /// The ClockManager will call this function to report a clock change
     fn clock_updated(&self);
 }
 
+/// Data structure for peripherals to store clock management info
 pub struct ClockClientData {
     enabled: Cell<bool>,
     client_index: Cell<usize>,
@@ -36,10 +39,14 @@ impl ClockClientData {
     pub fn set_has_lock(&self, lock: bool) { self.lock.set(lock); }
 }
 
+/// Data structure stored by ClockManager for each ClockClient
 pub struct ClockData<'a> {
     client: OptionalCell<&'a ClockClient>,
     enabled: Cell<bool>,
     need_lock: Cell<bool>,
+    // running is used to note whether a client that does not require a lock has
+    // started operation
+    running: Cell<bool>,
     clockmask: Cell<u32>,
     clocklist: Cell<u32>,
     min_freq: Cell<u32>,
@@ -52,6 +59,7 @@ impl ClockData<'a>{
             client: OptionalCell::empty(),
             enabled: Cell::new(false),
             need_lock: Cell::new(true),
+            running: Cell::new(false),
             clockmask: Cell::new(0x3ff),
             clocklist: Cell::new(0x3ff),
             min_freq: Cell::new(0),
@@ -62,6 +70,7 @@ impl ClockData<'a>{
         self.client.set(client);
         self.enabled.set(false);
         self.need_lock.set(true);
+        self.running.set(false);
         self.clockmask.set(0x3ff);
         self.clocklist.set(0x3ff);
         self.min_freq.set(0);
@@ -84,6 +93,9 @@ impl ClockData<'a>{
     pub fn get_need_lock(&self) -> bool {
         self.need_lock.get()
     }
+    pub fn get_running(&self) -> bool {
+        self.running.get()
+    }
     pub fn get_clockmask(&self) -> u32 {
         self.clockmask.get()
     }
@@ -101,6 +113,9 @@ impl ClockData<'a>{
     }
     pub fn set_need_lock(&self, need_lock: bool) {
         self.need_lock.set(need_lock);
+    }
+    pub fn set_running(&self, running: bool) {
+        self.running.set(running);
     }
     pub fn set_clockmask(&self, clockmask: u32) {
         self.clockmask.set(clockmask);
@@ -124,7 +139,7 @@ pub trait ClockManager<'a> {
     fn enable_clock(&self, client_index: usize) -> ReturnCode;
     fn disable_clock(&self, client_index: usize) -> ReturnCode;
 
-    /// Accesssors for current ClockParams state
+    /// Accesssors for current ClockData state
     fn set_need_lock(&self, client_index: usize, need_lock: bool) -> ReturnCode;
     fn set_clocklist(&self, client_index: usize, clocklist: u32) -> ReturnCode;
     fn set_min_frequency(&self, client_index: usize, min_freq: u32) -> ReturnCode;

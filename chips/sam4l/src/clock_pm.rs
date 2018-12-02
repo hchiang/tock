@@ -23,10 +23,15 @@ pub struct ImixClockManager<'a> {
     current_clock: Cell<u32>,
     change_clock: Cell<bool>,
     lock_count: Cell<u32>,
+    // clockmask of clients waiting for a clock change
+    change_clockmask: Cell<u32>,
+    // clockmask of currently running clients that don't need a lock
+    nolock_clockmask: Cell<u32>,
 }
 
 impl ImixClockManager<'a> {
 
+    // Used to calculate acceptable clocks based on frequency range
     fn freq_clockmask(&self, min_freq: u32, max_freq: u32) -> u32 {
         if min_freq > max_freq {
             return 0;
@@ -91,28 +96,42 @@ impl ImixClockManager<'a> {
     }
 
     fn update_clock(&self) {
-        let mut clockmask: u32 = 0xffffffff;
         self.change_clock.set(false);
 
-        //TODO first check clients that don't hold lock
+        // Find a compatible clock
+        let mut clockmask = self.nolock_clockmask.get();
+        let mut change_clockmask = 0xfff;
+        let mut incompatible = false;
+        let mut next_client = self.next_client.get();
         for _i in 0..self.num_clients.get() { 
-            let next_client = self.next_client.get();
             if !self.clients[next_client].get_enabled() {
                 continue;
             }
-            let next_clockmask = clockmask & self.clients[next_client].get_clocklist();
-            if next_clockmask == 0 { 
-                self.change_clock.set(true);
-                break;
+            let next_clockmask = clockmask & 
+                                self.clients[next_client].get_clocklist();
+            if next_clockmask == 0 {
+                if incompatible == false {
+                    incompatible = true;
+                    self.next_client.set(next_client);
+                    self.change_clock.set(true);
+                }
+                let new_change_clockmask = change_clockmask & 
+                                    self.clients[next_client].get_clocklist();
+                if new_change_clockmask != 0 {
+                    change_clockmask = new_change_clockmask;
+                }
             }
-            clockmask = next_clockmask;
+            else {
+                clockmask = next_clockmask;
+            }
             
-            self.next_client.set(next_client+1);
-            if self.next_client.get() >= self.num_clients.get() {
-                self.next_client.set(0);
+            next_client += 1;
+            if next_client >= self.num_clients.get() {
+                next_client = 0;
             }
         }
-
+        self.change_clockmask.set(change_clockmask);
+        // Choose only one clock from clockmask
         let mut clock = 0x1;
         for i in 0..NUM_CLOCK_SOURCES {
             if (clockmask >> i) & 0b1 == 1{
@@ -120,9 +139,10 @@ impl ImixClockManager<'a> {
                 break;
             } 
         }
+
+        // Change the clock
         let clock_changed = self.current_clock.get() != clock;
         self.current_clock.set(clock);
-
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
             unsafe {
@@ -130,14 +150,27 @@ impl ImixClockManager<'a> {
             }
         }
 
+        // Increment lock to prevent recursive calls to update_clock
         self.lock_count.set(self.lock_count.get()+1);
         for i in 0..self.num_clients.get() { 
-            if self.clients[i].get_enabled() && (clock & self.clients[i].get_clocklist() != 0) {
-                self.lock_count.set(self.lock_count.get()+1);
-                self.clients[i].client_update();
+            if !self.clients[i].get_enabled() {
+                continue;
+            }
+            if clock & self.clients[i].get_clocklist() != 0 {
+                if self.clients[i].get_need_lock() {
+                    self.lock_count.set(self.lock_count.get()+1);
+                    self.clients[i].client_update();
+                }
+                else if !self.clients[i].get_running() {
+                    self.clients[i].set_running(true);
+                    self.clients[i].client_update();
+                }
             }
         }
         self.lock_count.set(self.lock_count.get()-1);
+
+        // In case the clock chosen is not compatible with all clocks, need 
+        // another clock change
         if self.lock_count.get() == 0 && self.change_clock.get() {
             self.update_clock();
         }
@@ -170,12 +203,35 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         }
 
         self.clients[client_index].set_enabled(true);
-        if self.clients[client_index].get_clockmask() & self.current_clock.get() == 0 {
+
+        // The current clock is incompatible
+        if self.clients[client_index].get_clockmask() & 
+                            self.current_clock.get() == 0 {
             self.change_clock.set(true);
+            // Choose what the next clock will be
+            let next_clockmask = self.change_clockmask.get() & 
+                                self.clients[client_index].get_clocklist();
+            if next_clockmask != 0 { 
+                self.change_clockmask.set(next_clockmask);
+            }
+
             if self.lock_count.get() == 0 {
                 self.update_clock();
             }
         }
+        // The current clock is compatible and client doesn't need a lock
+        else if !self.clients[client_index].get_need_lock() {
+            let nolock_clockmask = self.nolock_clockmask.get() & 
+                                self.clients[client_index].get_clocklist();
+
+            // The next clock that will be changed to is also compatible
+            if nolock_clockmask & self.change_clockmask.get() != 0 {
+                self.nolock_clockmask.set(nolock_clockmask);
+                self.clients[client_index].set_running(true);
+                self.clients[client_index].client_update();
+            }
+        }
+        // The current clock is compatible and there is no pending clock change
         else if !self.change_clock.get() {
             self.lock_count.set(self.lock_count.get()+1);
             self.clients[client_index].client_update();
@@ -183,7 +239,6 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         return ReturnCode::SUCCESS;
     }
 
-    //Automatically calls update_clock if there are no locks 
     fn disable_clock(&self, client_index: usize) -> ReturnCode {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -193,21 +248,39 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         }
 
         self.clients[client_index].set_enabled(false);
-        self.lock_count.set(self.lock_count.get()-1);
-        if self.lock_count.get() == 0 {
-            self.update_clock();
+        self.clients[client_index].set_running(false);
+        if self.clients[client_index].get_need_lock() {
+            self.lock_count.set(self.lock_count.get()-1);
+            // Automatically calls update_clock if there are no locks
+            if self.lock_count.get() == 0 {
+                self.update_clock();
+            }
+        }
+        else {
+            // When a lock free client calls disable clock, recalculate 
+            // nolock_clockmask
+            let num_clients = self.num_clients.get();
+            let mut new_clockmask = 0xfff;
+            for i in 0..num_clients { 
+                if !self.clients[i].get_need_lock() &&
+                        self.clients[i].get_running() {
+                    new_clockmask &= self.clients[i].get_clocklist();
+                }
+            }
+            self.nolock_clockmask.set(new_clockmask);
         }
         return ReturnCode::SUCCESS;
     }
 
-    fn set_need_lock(&self, client_index: usize, need_lock: bool) -> ReturnCode {
+    // Accessor functions
+    fn set_need_lock(&self, client_index: usize, need_lock: bool) -> 
+                                                        ReturnCode {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
         self.clients[client_index].set_need_lock(need_lock);
         return ReturnCode::SUCCESS;
     }
-
     fn set_clocklist(&self, client_index: usize, clocklist: u32) -> ReturnCode {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -216,7 +289,8 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
-    fn set_min_frequency(&self, client_index: usize, min_freq: u32) -> ReturnCode {
+    fn set_min_frequency(&self, client_index: usize, min_freq: u32) ->
+                                                        ReturnCode {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
@@ -224,7 +298,8 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
-    fn set_max_frequency(&self, client_index: usize, max_freq: u32) -> ReturnCode{
+    fn set_max_frequency(&self, client_index: usize, max_freq: u32) -> 
+                                                        ReturnCode {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
@@ -269,5 +344,7 @@ pub static mut CM: ImixClockManager = ImixClockManager {
     current_clock: Cell::new(0),
     change_clock: Cell::new(false),
     lock_count: Cell::new(0),
+    change_clockmask: Cell::new(0xfff),
+    nolock_clockmask: Cell::new(0xfff),
 };
 

@@ -788,16 +788,16 @@ impl ClockClient for SpiHw {
     fn enable_cm(&self, client_index: usize) {
         self.clock_client.set_enabled(true);
         self.clock_client.set_client_index(client_index);
-        //TODO: spi doesn't work with RC1M, RCFAST, or EXTOSC
-        // spi should work with EXTOSC
+        unsafe { 
+            clock_pm::CM.set_need_lock(client_index, false); 
+            //TODO: spi doesn't work with RC1M, RCFAST, or EXTOSC
+            clock_pm::CM.set_clocklist(client_index, 0x1C); 
+        }
     }
 
     fn clock_updated(&self) {
         self.clock_client.set_has_lock(true);
-        //TODO
-        //if clock_changed {
-        //    self.set_baud_rate(self.baud_rate.get());
-        //}
+        self.set_baud_rate(self.baud_rate.get());
         self.read_write_callback();
     }
 }
