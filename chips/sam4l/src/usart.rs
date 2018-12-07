@@ -1224,14 +1224,21 @@ impl hil::spi::SpiMaster for USART {
 }
 
 impl hil::clock_pm::ClockClient for USART {
-    fn enable_cm(&self, client_index: usize) {
-        self.clock_client.set_enabled(true);
-        self.clock_client.set_client_index(client_index);
-        // Set clock parameters 
-        unsafe { clock_pm::CM.set_clocklist(client_index, 0x40); }
+    fn enable_cm(&self, cidx: &'static ClientIndex) {
+        //self.clock_client.set_enabled(true);
+        //self.clock_client.set_client_index(ClientIndex);
+        self.client_index.set(cidx);
+        let client_idx = self.client_index.take();
+        match client_idx {
+            Some(client_index) => {
+                unsafe { clock_pm::CM.set_clocklist(client_index, 0x40); }
+                self.client_index.set(client_index);
+            },
+            None => {},
+        }
     }
 
-    fn clock_updated(&self) {
+    fn clock_enabled(&self) {
         self.clock_client.set_has_lock(true); 
 
         let usart = &USARTRegManager::new(&self);
