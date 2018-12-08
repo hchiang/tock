@@ -17,8 +17,7 @@ const PLL: u32          = 0x080;
 const RC80M: u32        = 0x100; 
 const RCSYS: u32        = 0x200; 
 
-#[derive(Copy, Clone)]
-struct ImixClientIndex {
+pub struct ImixClientIndex {
     client_index: usize,
 }
 
@@ -28,16 +27,13 @@ impl ImixClientIndex {
             client_index: client_index,
         }
     }
-}
-
-impl ClientIndex for ImixClientIndex {
     fn get(&self) -> usize {
         self.client_index
     }
 }
 
 /// Data structure stored by ClockManager for each ClockClient
-pub struct ClockData<'a> {
+struct ClockData<'a> {
     client: OptionalCell<&'a ClockClient>,
     client_index: Cell<&'static ImixClientIndex>,
     enabled: Cell<bool>,
@@ -89,7 +85,7 @@ impl ClockData<'a>{
             None => {},
         }
     }
-    fn get_client_index(&self) -> &'static ClientIndex {
+    fn get_client_index(&self) -> &'static ImixClientIndex {
         self.client_index.get()
     }
     fn get_enabled(&self) -> bool {
@@ -306,6 +302,7 @@ impl ImixClockManager<'a> {
 }
 
 impl<'a> ClockManager<'a> for ImixClockManager<'a> {
+    type ClientIndex = ImixClientIndex;
 
     fn register(&self, c:&'a ClockClient) {
         let num_clients = self.num_clients.get();
@@ -315,10 +312,11 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         }
         self.clients[num_clients].initialize(c);
         self.num_clients.set(num_clients+1);
-        c.enable_cm(self.clients[num_clients].get_client_index());
+        //TODO
+        //return Ok(self.clients[num_clients].get_client_index());
     }
     
-    fn enable_clock(&self, cidx:&'static ClientIndex) -> ReturnCode {
+    fn enable_clock(&self, cidx:&'static Self::ClientIndex) -> ReturnCode {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -364,7 +362,7 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         return ReturnCode::SUCCESS;
     }
 
-    fn disable_clock(&self, cidx:&'static ClientIndex) -> ReturnCode {
+    fn disable_clock(&self, cidx:&'static Self::ClientIndex) -> ReturnCode {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -401,7 +399,7 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
     }
 
     // Accessor functions
-    fn set_need_lock(&self, cidx:&'static ClientIndex, need_lock: bool) -> ReturnCode {
+    fn set_need_lock(&self, cidx:&'static Self::ClientIndex, need_lock: bool) -> ReturnCode {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -409,7 +407,7 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         self.clients[client_index].set_need_lock(need_lock);
         return ReturnCode::SUCCESS;
     }
-    fn set_clocklist(&self, cidx:&'static ClientIndex, clocklist: u32) -> ReturnCode {
+    fn set_clocklist(&self, cidx:&'static Self::ClientIndex, clocklist: u32) -> ReturnCode {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
@@ -418,7 +416,7 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
-    fn set_min_frequency(&self, cidx:&'static ClientIndex, min_freq: u32) ->
+    fn set_min_frequency(&self, cidx:&'static Self::ClientIndex, min_freq: u32) ->
                                                         ReturnCode {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
@@ -428,7 +426,7 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
-    fn set_max_frequency(&self, cidx:&'static ClientIndex, max_freq: u32) -> 
+    fn set_max_frequency(&self, cidx:&'static Self::ClientIndex, max_freq: u32) -> 
                                                         ReturnCode {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
@@ -439,28 +437,28 @@ impl<'a> ClockManager<'a> for ImixClockManager<'a> {
         return ReturnCode::SUCCESS;
     }
     
-    fn get_need_lock(&self, cidx:&'static ClientIndex) -> Result<bool, ReturnCode> {
+    fn get_need_lock(&self, cidx:&'static Self::ClientIndex) -> Result<bool, ReturnCode> {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_need_lock());
     }
-    fn get_clocklist(&self, cidx:&'static ClientIndex) -> Result<u32, ReturnCode> {
+    fn get_clocklist(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_clocklist());
     }
-    fn get_min_frequency(&self, cidx:&'static ClientIndex) -> Result<u32, ReturnCode> {
+    fn get_min_frequency(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_min_freq());
     }
-    fn get_max_frequency(&self, cidx:&'static ClientIndex) -> Result<u32, ReturnCode> {
+    fn get_max_frequency(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
         let client_index = cidx.get();
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
@@ -483,15 +481,15 @@ static IMIX_CLIENT_INDEX9: ImixClientIndex = ImixClientIndex::new(9);
 pub static mut CM: ImixClockManager = ImixClockManager {
     
     clients: [ClockData::new(&IMIX_CLIENT_INDEX0), 
-                ClockData::new(&IMIX_CLIENT_INDEX1),
-                ClockData::new(&IMIX_CLIENT_INDEX2),
-                ClockData::new(&IMIX_CLIENT_INDEX3),
-                ClockData::new(&IMIX_CLIENT_INDEX4),
-                ClockData::new(&IMIX_CLIENT_INDEX5),
-                ClockData::new(&IMIX_CLIENT_INDEX6),
-                ClockData::new(&IMIX_CLIENT_INDEX7),
-                ClockData::new(&IMIX_CLIENT_INDEX8),
-                ClockData::new(&IMIX_CLIENT_INDEX9)],
+              ClockData::new(&IMIX_CLIENT_INDEX1),
+              ClockData::new(&IMIX_CLIENT_INDEX2),
+              ClockData::new(&IMIX_CLIENT_INDEX3),
+              ClockData::new(&IMIX_CLIENT_INDEX4),
+              ClockData::new(&IMIX_CLIENT_INDEX5),
+              ClockData::new(&IMIX_CLIENT_INDEX6),
+              ClockData::new(&IMIX_CLIENT_INDEX7),
+              ClockData::new(&IMIX_CLIENT_INDEX8),
+              ClockData::new(&IMIX_CLIENT_INDEX9)],
     num_clients: Cell::new(0),
     next_client: Cell::new(0),
     current_clock: Cell::new(0),
