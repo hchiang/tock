@@ -1224,7 +1224,7 @@ impl hil::spi::SpiMaster for USART {
 }
 
 impl hil::clock_pm::ClockClient for USART {
-    fn enable_cm(&self, client_index: usize) {
+    fn enable_cm(&self, client_access: &ClockData) {
         self.clock_client.set_enabled(true);
         self.clock_client.set_client_index(client_index);
         // Set clock parameters 

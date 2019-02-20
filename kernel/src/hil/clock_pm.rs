@@ -4,10 +4,6 @@ use returncode::ReturnCode;
 
 /// Implemented by each peripheral
 pub trait ClockClient {
-    /// This function will by called by ClockManager's register function 
-    ///     Indicates the peripheral should turn on clock management
-    ///     The peripheral needs to keep track of client_index
-    fn enable_cm(&self, client_index: usize);
     /// The ClockManager will call this function to report a clock change
     fn clock_updated(&self);
 }
@@ -15,7 +11,7 @@ pub trait ClockClient {
 /// Data structure for peripherals to store clock management info
 pub struct ClockClientData {
     enabled: Cell<bool>,
-    client_index: Cell<usize>,
+    client_access: Cell<&usize>,
     lock: Cell<bool>,
 }
 
@@ -135,7 +131,7 @@ pub trait ClockManager<'a> {
     /// Clients should call this function to update the ClockManager
     /// on which clocks they can tolerate
     ///
-    fn register(&self, c:&'a ClockClient);
+    fn register(&self, c:&'a ClockClient) -> Result<ClientIndex, ReturnCode>;
     fn enable_clock(&self, client_index: usize) -> ReturnCode;
     fn disable_clock(&self, client_index: usize) -> ReturnCode;
 

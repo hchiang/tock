@@ -16,6 +16,16 @@ const PLL: u32          = 0x080;
 const RC80M: u32        = 0x100; 
 const RCSYS: u32        = 0x200; 
 
+pub struct ClientIndex {
+    client_index: usize,
+}
+
+impl ClientIndex {
+    fn new(client_index: usize) -> ClientIndex {
+        client_index: client_index,
+    }
+}
+
 pub struct ImixClockManager<'a> {
     clients: [ClockData<'a>; NUM_CLOCK_CLIENTS],
     num_clients: Cell<usize>,
@@ -101,7 +111,7 @@ impl ImixClockManager<'a> {
         // Find a compatible clock
         let mut clockmask = self.nolock_clockmask.get();
         let mut change_clockmask = 0xfff;
-        let mut incompatible = false;
+        let mut set_next_client = false;
         let mut next_client = self.next_client.get();
         for _i in 0..self.num_clients.get() { 
             if !self.clients[next_client].get_enabled() {
@@ -110,8 +120,8 @@ impl ImixClockManager<'a> {
             let next_clockmask = clockmask & 
                                 self.clients[next_client].get_clocklist();
             if next_clockmask == 0 {
-                if incompatible == false {
-                    incompatible = true;
+                if set_next_client == false {
+                    set_next_client = true;
                     self.next_client.set(next_client);
                     self.change_clock.set(true);
                 }
@@ -187,11 +197,14 @@ impl ImixClockManager<'a> {
 
 impl<'a> ClockManager<'a> for ImixClockManager<'a> {
 
-    fn register(&self, c:&'a ClockClient) {
+    fn register(&self, c:&'a ClockClient) -> Result<ClientIndex, ReturnCode> {
         let num_clients = self.num_clients.get();
+        if num_clients >= NUM_CLOCK_CLIENTS {
+            return Err(ReturnCode::ENOMEM);
+        }
         self.clients[num_clients].initialize(c);
-        c.enable_cm(num_clients);
         self.num_clients.set(num_clients+1);
+        return Ok(ClientIndex::new(num_clients));
     }
     
     fn enable_clock(&self, client_index: usize) -> ReturnCode {
