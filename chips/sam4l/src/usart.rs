@@ -395,7 +395,7 @@ pub struct USART {
     baud_rate: Cell<u32>,
 
     //Assumes only one outstanding transmit or receive
-    clock_client: ClockClientData,
+    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
     callback_tx_data: TakeCell<'static, [u8]>,
     callback_tx_len: Cell<usize>,
     callback_rx_data: TakeCell<'static, [u8]>,
@@ -460,8 +460,7 @@ impl USART {
             spi_chip_select: OptionalCell::empty(),
             baud_rate: Cell::new(0),
 
-            clock_client: ClockClientData::new(false, 99, false),
-
+            client_index: OptionalCell::empty(),
             callback_tx_data: TakeCell::empty(),
             callback_tx_len: Cell::new(0),
             callback_rx_data: TakeCell::empty(),
@@ -1243,6 +1242,9 @@ impl hil::clock_pm::ClockClient for USART {
         if self.callback_tx_len.get() > 0 {
             self.transmit_callback();
         }
+    }
+    fn clock_disabled(&self) {
+
     }
 }
 
