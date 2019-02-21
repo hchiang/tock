@@ -1,6 +1,6 @@
 use core::cell::Cell;
-use common::cells::OptionalCell;
-use returncode::ReturnCode;
+use tock_cells::optional_cell::OptionalCell;
+use crate::returncode::ReturnCode;
 
 /// Implemented by each peripheral
 pub trait ClockClient {
@@ -9,39 +9,12 @@ pub trait ClockClient {
     fn clock_disabled(&self);
 }
 
-/// Data structure for peripherals to store clock management info
-//pub struct ClockClientData {
-//    enabled: Cell<bool>,
-//    client_index: Cell<ClientIndex>,
-//    lock: Cell<bool>,
-//}
-//
-//impl ClockClientData {
-//    pub const fn new(enabled: bool, client_index: usize, has_lock: bool) -> ClockClientData {
-//        ClockClientData {
-//            enabled: Cell::new(enabled),
-//            client_index: Cell::new(client_index),
-//            lock: Cell::new(has_lock),
-//        }
-//     }
-//
-//    pub fn enabled(&self) -> bool { self.enabled.get() }
-//    pub fn client_index(&self) -> ClientIndex { self.client_index.get() }
-//    pub fn has_lock(&self) -> bool { self.lock.get() }
-//
-//    pub fn set_enabled(&self, enabled: bool) { self.enabled.set(enabled) }
-//    pub fn set_client_index(&self, client_index: ClientIndex) {
-//        self.client_index.set(client_index); 
-//    }
-//    pub fn set_has_lock(&self, lock: bool) { self.lock.set(lock); }
-//}
-
-pub trait ClockManager<'a> {
+pub trait ClockManager {
     //TODO how to make this visible to ClockClients as well?
     type ClientIndex;
 
-    fn register(&self, c:&'a ClockClient);
-    fn enable_clock(&self, client_index:&'static Self::ClientIndex) -> ReturnCode;
+    fn register(&self, c:&'static ClockClient) -> &'static Self::ClientIndex;
+    fn enable_clock(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn disable_clock(&self, client_index:&'static Self::ClientIndex) -> ReturnCode;
 
     /// Accesssors for current ClockData state

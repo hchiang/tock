@@ -16,12 +16,14 @@
 //! - Author: Philip Levis <pal@cs.stanford.edu>, Branden Ghena <brghena@umich.edu>
 //! - Updated: May 1, 2017
 
+use crate::dma;
+use crate::pm::{self, Clock, PBAClock};
+use crate::scif;
 use core::cell::Cell;
 use core::{cmp, mem, slice};
-use dma;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::math;
-use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
+use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
