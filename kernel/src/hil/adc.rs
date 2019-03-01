@@ -1,6 +1,6 @@
 //! Interfaces for analog to digital converter peripherals.
 
-use returncode::ReturnCode;
+use crate::returncode::ReturnCode;
 
 // *** Interfaces for low-speed, single-sample ADCs ***
 
@@ -51,14 +51,6 @@ pub trait Client {
 /// Interface for continuously sampling at a given frequency on a channel.
 /// Requires the AdcSimple interface to have been implemented as well.
 pub trait AdcHighSpeed: Adc {
-    /// Start sampling continuously until the buffer is full
-    fn sample_highspeed_once(&self,
-                        channel: &Self::Channel,
-                        frequency: u32,
-                        buffer: &'static mut [u16],
-                        length: usize)
-                        -> (ReturnCode, Option<&'static mut [u16]>);
-
     /// Start sampling continuously into buffers.
     /// Samples are double-buffered, going first into `buffer1` and then into
     /// `buffer2`. A callback is performed to the client whenever either buffer

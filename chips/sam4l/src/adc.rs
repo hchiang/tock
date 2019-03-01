@@ -16,20 +16,19 @@
 //! - Author: Philip Levis <pal@cs.stanford.edu>, Branden Ghena <brghena@umich.edu>
 //! - Updated: May 1, 2017
 
+use crate::dma;
+use crate::pm::{self, Clock, PBAClock};
+use crate::scif;
 use core::cell::Cell;
 use core::{cmp, mem, slice};
-use dma;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::math;
-use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
+use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use pm::{self, Clock, PBAClock};
-use scif;
-use kernel::hil::clock_pm::*;
-use clock_pm;
-use kernel::hil::adc::Adc as Adcimport;
+use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use crate::clock_pm;
 
 /// Representation of an ADC channel on the SAM4L.
 pub struct AdcChannel {
@@ -132,15 +131,12 @@ pub struct Adc {
     // ADC client to send sample complete notifications to
     client: OptionalCell<&'static EverythingClient>,
 
-    // Callback buffers, info
     callback_channel_num: Cell<u32>, 
     callback_channel_internal: Cell<u32>, 
     callback_frequency: Cell<u32>, 
     callback_buffer: TakeCell<'static, [u16]>,
     callback_length: Cell<usize>,
-
-    // for interacting with clock manager
-    clock_client: ClockClientData,
+    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
 }
 
 /// Memory mapped registers for the ADC.
@@ -394,16 +390,14 @@ impl Adc {
 
             // higher layer to send responses to
             client: OptionalCell::empty(),
-
-            // callback buffers, info
+    
+            // callback buffers for clock management
             callback_channel_num: Cell::new(0),
             callback_channel_internal: Cell::new(0),
             callback_frequency: Cell::new(0),
             callback_buffer: TakeCell::empty(),
             callback_length: Cell::new(0),
-
-            // clock manager
-            clock_client: ClockClientData::new(false,99,false),
+            client_index: OptionalCell::empty(),
         }
     }
 
@@ -472,29 +466,6 @@ impl Adc {
         }
     }
 
-    // Disables the adc
-    fn disable(&self) -> ReturnCode {
-        //TODO: adc causes powerdraw in deepsleep
-        let regs: &AdcRegisters = &*self.registers;
-
-        // disable ADC
-        regs.cr.write(Control::DIS::SET);
-
-        // wait until status is disabled
-        let mut timeout = 10000;
-        while regs.sr.is_set(Status::EN) {
-            timeout -= 1;
-            if timeout == 0 {
-                // ADC never disabled
-                return ReturnCode::FAIL;
-            }
-        }
-
-        self.enabled.set(false);
-        scif::generic_clock_disable(scif::GenericClock::GCLK10);
-        pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
-        return ReturnCode::SUCCESS;
-    }
     /// Clear all status bits using the status clear register.
     fn clear_status(&self) {
         let regs: &AdcRegisters = &*self.registers;
@@ -515,7 +486,7 @@ impl Adc {
         if self.active.get() {
             // disallow reconfiguration during sampling
             ReturnCode::EBUSY
-        } else if (frequency == self.adc_clk_freq.get()) & self.enabled.get() {
+        } else if frequency == self.adc_clk_freq.get() {
             // already configured to work on this frequency
             ReturnCode::SUCCESS
         } else {
@@ -645,16 +616,11 @@ impl Adc {
         }
     }
 
-    fn sample_highspeed_callback(&self){
+    fn sample_highspeed_callback(&self) {
         let regs: &AdcRegisters = &*self.registers;
 
         let res = self.config_and_enable(self.callback_frequency.get());
-        if res != ReturnCode::SUCCESS {
-            return;
-        }
-        if !self.enabled.get() {
-            return;
-        }
+        if res != ReturnCode::SUCCESS { return;}
 
         self.active.set(true);
         self.continuous.set(true);
@@ -668,6 +634,7 @@ impl Adc {
             + SequencerConfig::GAIN::Gain0p5x
             + SequencerConfig::BIPOLAR::Disable
             + SequencerConfig::HWLA::Enable;
+
         // set trigger based on how good our clock is
         if self.cpu_clock.get() {
             cfg += SequencerConfig::TRGSEL::InternalAdcTimer;
@@ -690,10 +657,9 @@ impl Adc {
         // clear any current status
         self.clear_status();
 
-        self.callback_buffer.take().map(|buffer| {
-
-            // receive up to the buffer's length samples
-            let dma_len = cmp::min(buffer.len(), self.callback_length.get());
+        // receive up to the buffer's length samples
+        self.callback_buffer.take().map(|buffer1| {
+            let dma_len = cmp::min(buffer1.len(), self.callback_length.get());
 
             // change buffer into a [u8]
             // this is unsafe but acceptable for the following reasons
@@ -703,8 +669,8 @@ impl Adc {
             //    make sure we don't go past dma_buf.len()/width
             //  * we will transmute the array back to a [u16] after the DMA
             //    transfer is complete
-            let dma_buf_ptr = unsafe { mem::transmute::<*mut u16, *mut u8>(buffer.as_mut_ptr()) };
-            let dma_buf = unsafe { slice::from_raw_parts_mut(dma_buf_ptr, buffer.len() * 2) };
+            let dma_buf_ptr = unsafe { mem::transmute::<*mut u16, *mut u8>(buffer1.as_mut_ptr()) };
+            let dma_buf = unsafe { slice::from_raw_parts_mut(dma_buf_ptr, buffer1.len() * 2) };
 
             // set up the DMA
             self.rx_dma.map(move |dma| {
@@ -717,7 +683,6 @@ impl Adc {
 
         // start timer
         regs.cr.write(Control::TSTART::SET);
-        
     }
 }
 
@@ -897,13 +862,11 @@ impl hil::adc::Adc for Adc {
             // reset the ADC peripheral
             regs.cr.write(Control::SWRST::SET);
 
-            self.disable();
-
-            if self.clock_client.has_lock() {
-                self.clock_client.set_has_lock(false);
-                unsafe { clock_pm::CM.disable_clock(self.clock_client.client_index()); }
-            }
-
+            self.client_index.map( |client_index|
+                unsafe {
+                clock_pm::CM.disable_clock(client_index)
+                }
+            );
             // stop DMA transfer if going. This should safely return a None if
             // the DMA was not being used
             let dma_buffer = self.rx_dma.map_or(None, |rx_dma| {
@@ -943,52 +906,6 @@ impl hil::adc::Adc for Adc {
 
 /// Implements an ADC capable of continuous sampling
 impl hil::adc::AdcHighSpeed for Adc {
-
-    fn sample_highspeed_once(
-        &self,
-        channel: &Self::Channel,
-        frequency: u32,
-        buffer: &'static mut [u16],
-        length: usize,
-    ) -> (
-        ReturnCode, 
-        Option<&'static mut [u16]>,
-    ) {
-
-        if self.active.get() {
-            // only one sample at a time
-            (ReturnCode::EBUSY, Some(buffer))
-
-        } else if frequency <= (self.adc_clk_freq.get() / (0xFFFF + 1)) || frequency > 250000 {
-            // can't sample faster than the max sampling frequency or slower
-            // than the timer can be set to
-            (ReturnCode::EINVAL, Some(buffer))
-
-        } else if length == 0 {
-            // at least need a valid length for the for the first buffer full of
-            // samples. Otherwise, what are we doing here?
-            (ReturnCode::EINVAL, Some(buffer))
-
-        } else {
-            // callback info
-            self.callback_channel_num.set(channel.chan_num);
-            self.callback_channel_internal.set(channel.internal);
-            self.callback_frequency.set(frequency);
-            self.callback_buffer.replace(buffer);
-            self.callback_length.set(length);
-
-            if self.clock_client.enabled() && !self.clock_client.has_lock() {
-                unsafe { 
-                    clock_pm::CM.set_min_frequency(self.clock_client.client_index(), frequency*32);
-                    clock_pm::CM.enable_clock(self.clock_client.client_index()); }
-            }
-            else {
-                self.sample_highspeed_callback();
-            }
-            (ReturnCode::SUCCESS, None)
-        }
-    }
-
     /// Capture buffered samples from the ADC continuously at a given
     /// frequency, calling the client whenever a buffer fills up. The client is
     /// then expected to either stop sampling or provide an additional buffer
@@ -1015,15 +932,7 @@ impl hil::adc::AdcHighSpeed for Adc {
         Option<&'static mut [u16]>,
         Option<&'static mut [u16]>,
     ) {
-        let regs: &AdcRegisters = &*self.registers;
-
-        let res = self.config_and_enable(frequency);
-
-        if res != ReturnCode::SUCCESS {
-            return (res, Some(buffer1), Some(buffer2));
-        } else if !self.enabled.get() {
-            (ReturnCode::EOFF, Some(buffer1), Some(buffer2))
-        } else if self.active.get() {
+        if self.active.get() {
             // only one sample at a time
             (ReturnCode::EBUSY, Some(buffer1), Some(buffer2))
         } else if frequency <= (self.adc_clk_freq.get() / (0xFFFF + 1)) || frequency > 250000 {
@@ -1035,68 +944,34 @@ impl hil::adc::AdcHighSpeed for Adc {
             // samples. Otherwise, what are we doing here?
             (ReturnCode::EINVAL, Some(buffer1), Some(buffer2))
         } else {
-            self.active.set(true);
-            self.continuous.set(true);
+            self.callback_channel_num.set(channel.chan_num);
+            self.callback_channel_internal.set(channel.internal);
+            self.callback_frequency.set(frequency);
+            self.callback_buffer.replace(buffer1);
+            self.callback_length.set(length1);
 
             // store the second buffer for later use
             self.next_dma_buffer.replace(buffer2);
             self.next_dma_length.set(length2);
 
-            // adc sequencer configuration
-            let mut cfg = SequencerConfig::MUXNEG.val(0x7) + // ground pad
-                SequencerConfig::MUXPOS.val(channel.chan_num)
-                + SequencerConfig::INTERNAL.val(0x2 | channel.internal)
-                + SequencerConfig::RES::Bits12
-                + SequencerConfig::GCOMP::Disable
-                + SequencerConfig::GAIN::Gain0p5x
-                + SequencerConfig::BIPOLAR::Disable
-                + SequencerConfig::HWLA::Enable;
-            // set trigger based on how good our clock is
-            if self.cpu_clock.get() {
-                cfg += SequencerConfig::TRGSEL::InternalAdcTimer;
-            } else {
-                cfg += SequencerConfig::TRGSEL::ContinuousMode;
+            if self.client_index.is_none() {
+                unsafe {
+                let regval = clock_pm::CM.register(&ADC0);
+                match regval {
+                    Ok(v) => {
+                        self.client_index.set(v);
+                        clock_pm::CM.set_clocklist(v, 0x3ff);
+                    }
+                    Err(_e) => {} 
+                }
+                }
             }
-            regs.seqcfg.write(cfg);
-
-            // stop timer if running
-            regs.cr.write(Control::TSTOP::SET);
-
-            if self.cpu_clock.get() {
-                // set timer, limit to bounds
-                // f(timer) = f(adc) / (counter + 1)
-                let mut counter = (self.adc_clk_freq.get() / frequency) - 1;
-                counter = cmp::max(cmp::min(counter, 0xFFFF), 0);
-                regs.itimer.write(InternalTimer::ITMC.val(counter));
-            }
-
-            // clear any current status
-            self.clear_status();
-
-            // receive up to the buffer's length samples
-            let dma_len = cmp::min(buffer1.len(), length1);
-
-            // change buffer into a [u8]
-            // this is unsafe but acceptable for the following reasons
-            //  * the buffer is aligned based on 16-bit boundary, so the 8-bit
-            //    alignment is fine
-            //  * the DMA is doing checking based on our expected data width to
-            //    make sure we don't go past dma_buf.len()/width
-            //  * we will transmute the array back to a [u16] after the DMA
-            //    transfer is complete
-            let dma_buf_ptr = unsafe { mem::transmute::<*mut u16, *mut u8>(buffer1.as_mut_ptr()) };
-            let dma_buf = unsafe { slice::from_raw_parts_mut(dma_buf_ptr, buffer1.len() * 2) };
-
-            // set up the DMA
-            self.rx_dma.map(move |dma| {
-                self.dma_running.set(true);
-                dma.enable();
-                self.rx_length.set(dma_len);
-                dma.do_transfer(self.rx_dma_peripheral, dma_buf, dma_len);
+            self.client_index.map( |client_index| {
+                unsafe {
+                clock_pm::CM.set_min_frequency(client_index, frequency*32);
+                clock_pm::CM.enable_clock(client_index);
+                }
             });
-
-            // start timer
-            regs.cr.write(Control::TSTART::SET);
 
             (ReturnCode::SUCCESS, None, None)
         }
@@ -1141,7 +1016,6 @@ impl hil::adc::AdcHighSpeed for Adc {
         Option<&'static mut [u16]>,
         Option<&'static mut [u16]>,
     ) {
-
         if self.active.get() {
             // cannot return buffers while running
             (ReturnCode::EINVAL, None, None)
@@ -1177,51 +1051,43 @@ impl dma::DMAClient for Adc {
             // get length of received buffer
             let length = self.rx_length.get();
 
-            //Is this a sample_highspeed or a sample_highspeed_once
-            if self.clock_client.has_lock() {
-                self.stop_sampling();
-            }
-            else {
-                // start a new transfer with the next buffer
-                // we need to do this quickly in order to keep from missing samples.
-                // At 175000 Hz, we only have 5.8 us (~274 cycles) to do so
-                self.next_dma_buffer.take().map(|buf| {
+            // start a new transfer with the next buffer
+            // we need to do this quickly in order to keep from missing samples.
+            // At 175000 Hz, we only have 5.8 us (~274 cycles) to do so
+            self.next_dma_buffer.take().map(|buf| {
+                // first determine the buffer's length in samples
+                let dma_len = cmp::min(buf.len(), self.next_dma_length.get());
 
-                    // first determine the buffer's length in samples
-                    let dma_len = cmp::min(buf.len(), self.next_dma_length.get());
+                // only continue with a nonzero length. If we were given a
+                // zero-length buffer or length field, assume that the user knew
+                // what was going on, and just don't use the buffer
+                if dma_len > 0 {
+                    // change buffer into a [u8]
+                    // this is unsafe but acceptable for the following reasons
+                    //  * the buffer is aligned based on 16-bit boundary, so the
+                    //    8-bit alignment is fine
+                    //  * the DMA is doing checking based on our expected data
+                    //    width to make sure we don't go past
+                    //    dma_buf.len()/width
+                    //  * we will transmute the array back to a [u16] after the
+                    //    DMA transfer is complete
+                    let dma_buf_ptr =
+                        unsafe { mem::transmute::<*mut u16, *mut u8>(buf.as_mut_ptr()) };
+                    let dma_buf = unsafe { slice::from_raw_parts_mut(dma_buf_ptr, buf.len() * 2) };
 
-                    // only continue with a nonzero length. If we were given a
-                    // zero-length buffer or length field, assume that the user knew
-                    // what was going on, and just don't use the buffer
-                    if dma_len > 0 {
-                        // change buffer into a [u8]
-                        // this is unsafe but acceptable for the following reasons
-                        //  * the buffer is aligned based on 16-bit boundary, so the
-                        //    8-bit alignment is fine
-                        //  * the DMA is doing checking based on our expected data
-                        //    width to make sure we don't go past
-                        //    dma_buf.len()/width
-                        //  * we will transmute the array back to a [u16] after the
-                        //    DMA transfer is complete
-                        let dma_buf_ptr =
-                            unsafe { mem::transmute::<*mut u16, *mut u8>(buf.as_mut_ptr()) };
-                        let dma_buf = unsafe { slice::from_raw_parts_mut(dma_buf_ptr, buf.len() * 2) };
-
-                        // set up the DMA
-                        self.rx_dma.map(move |dma| {
-                            self.dma_running.set(true);
-                            dma.enable();
-                            self.rx_length.set(dma_len);
-                            dma.do_transfer(self.rx_dma_peripheral, dma_buf, dma_len);
-                        });
-
-                    } else {
-                        // if length was zero, just keep the buffer in the takecell
-                        // so we can return it when `stop_sampling` is called
-                        self.next_dma_buffer.replace(buf);
-                    }
-                });
-            }
+                    // set up the DMA
+                    self.rx_dma.map(move |dma| {
+                        self.dma_running.set(true);
+                        dma.enable();
+                        self.rx_length.set(dma_len);
+                        dma.do_transfer(self.rx_dma_peripheral, dma_buf, dma_len);
+                    });
+                } else {
+                    // if length was zero, just keep the buffer in the takecell
+                    // so we can return it when `stop_sampling` is called
+                    self.next_dma_buffer.replace(buf);
+                }
+            });
 
             // alert client
             self.client.map(|client| {
@@ -1243,14 +1109,10 @@ impl dma::DMAClient for Adc {
 }
 
 impl hil::clock_pm::ClockClient for Adc {
-    fn enable_cm(&self, client_index: usize) {
-        self.clock_client.set_enabled(true);
-        self.clock_client.set_client_index(client_index);
-    }
-
-    fn clock_updated(&self) {
-        self.clock_client.set_has_lock(true); 
+    fn clock_enabled(&self) {
         self.sample_highspeed_callback();
+    }
+    fn clock_disabled(&self) {
     }
 }
 
