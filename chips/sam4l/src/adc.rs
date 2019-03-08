@@ -960,7 +960,7 @@ impl hil::adc::AdcHighSpeed for Adc {
                 match regval {
                     Ok(v) => {
                         self.client_index.set(v);
-                        clock_pm::CM.set_clocklist(v, 0x3ff);
+                        clock_pm::CM.set_clocklist(v, 0x080);
                     }
                     Err(_e) => {} 
                 }

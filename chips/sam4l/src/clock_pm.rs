@@ -2,20 +2,21 @@ use core::cell::Cell;
 use kernel::common::cells::OptionalCell;
 use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
+use kernel::debug_gpio;
 use crate::pm;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
 
-const RC1M: u32         = 0x002; 
-const RCFAST4M: u32     = 0x004; 
-const RCFAST8M: u32     = 0x008;    
-const RCFAST12M: u32    = 0x010; 
-const EXTOSC: u32       = 0x020; 
-const DFLL: u32         = 0x040; 
-const PLL: u32          = 0x080; 
-const RC80M: u32        = 0x100; 
-const RCSYS: u32        = 0x200; 
+const RCSYS: u32        = 0x002; 
+const RC1M: u32         = 0x004; 
+const RCFAST4M: u32     = 0x008; 
+const RCFAST8M: u32     = 0x010;    
+const RCFAST12M: u32    = 0x020; 
+const EXTOSC: u32       = 0x040; 
+const DFLL: u32         = 0x080; 
+const PLL: u32          = 0x100; 
+const RC80M: u32        = 0x200; 
 
 pub struct ImixClientIndex {
     client_index: usize,
@@ -189,22 +190,22 @@ impl ImixClockManager {
         // Roughly ordered in terms of least to most power consumption
         let mut system_clock = pm::SystemClockSource::RcsysAt115kHz;
         match clock {
-            0x02 => system_clock = pm::SystemClockSource::RC1M,
-            0x04 => system_clock = pm::SystemClockSource::RCFAST{
-                                    frequency: pm::RcfastFrequency::Frequency4MHz},
+            0x02 => system_clock = pm::SystemClockSource::RcsysAt115kHz,
+            0x04 => system_clock = pm::SystemClockSource::RC1M,
             0x08 => system_clock = pm::SystemClockSource::RCFAST{
-                                    frequency: pm::RcfastFrequency::Frequency8MHz},
+                                    frequency: pm::RcfastFrequency::Frequency4MHz},
             0x10 => system_clock = pm::SystemClockSource::RCFAST{
+                                    frequency: pm::RcfastFrequency::Frequency8MHz},
+            0x20 => system_clock = pm::SystemClockSource::RCFAST{
                                     frequency: pm::RcfastFrequency::Frequency12MHz},
-            0x20 => system_clock = pm::SystemClockSource::ExternalOscillator{
+            0x40 => system_clock = pm::SystemClockSource::ExternalOscillator{
                                     frequency: pm::OscillatorFrequency::Frequency16MHz,
                                     startup_mode: pm::OscillatorStartup::FastStart},
-            0x40 => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
-            0x80 => system_clock = pm::SystemClockSource::PllExternalOscillatorAt48MHz{ 
+            0x80 => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
+            0x100 => system_clock = pm::SystemClockSource::PllExternalOscillatorAt48MHz{ 
                                     frequency: pm::OscillatorFrequency::Frequency16MHz,
                                     startup_mode: pm::OscillatorStartup::FastStart},
-            0x100 => system_clock = pm::SystemClockSource::RC80M,
-            0x200 => system_clock = pm::SystemClockSource::RcsysAt115kHz,
+            0x200 => system_clock = pm::SystemClockSource::RC80M,
             _ => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
         }
         return system_clock;
@@ -259,6 +260,7 @@ impl ImixClockManager {
         let clock_changed = self.current_clock.get() != clock;
         self.current_clock.set(clock);
         if clock_changed {
+            debug_gpio!(0,toggle);
             let system_clock = self.convert_to_clock(clock);
             unsafe {
                 pm::PM.change_system_clock(system_clock);
@@ -373,11 +375,6 @@ impl ClockManager for ImixClockManager {
         self.clients[client_index].set_running(false);
         if self.clients[client_index].get_need_lock() {
             self.lock_count.set(self.lock_count.get()-1);
-            self.clients[client_index].client_disabled();
-            // Automatically calls update_clock if there are no locks
-            if self.lock_count.get() == 0 {
-                self.update_clock();
-            }
         }
         else {
             // When a lock free client calls disable clock, recalculate 
@@ -391,7 +388,11 @@ impl ClockManager for ImixClockManager {
                 }
             }
             self.nolock_clockmask.set(new_clockmask);
-            self.clients[client_index].client_disabled();
+        }
+        self.clients[client_index].client_disabled();
+        // Automatically calls update_clock if there are no locks
+        if self.lock_count.get() == 0 {
+            self.update_clock();
         }
         return ReturnCode::SUCCESS;
     }

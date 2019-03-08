@@ -284,8 +284,8 @@ impl SpiHw {
                 Ok(v) => {
                     self.client_index.set(v);
                     clock_pm::CM.set_need_lock(v, false);
-                    //TODO: SPI doesn't work with RC1M, RCFAST, or EXTOSC
-                    clock_pm::CM.set_clocklist(v, 0x1C);
+                    clock_pm::CM.set_clocklist(v, 0x080);
+                    //clock_pm::CM.set_clocklist(v, 0x3fe);
                 }
                 Err(_e) => {} 
             }
@@ -306,6 +306,12 @@ impl SpiHw {
         // still in the TX buffer.
         while !spi.registers.sr.is_set(Status::TXEMPTY) {}
 
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.disable_clock(client_index)
+            }
+        );
+
         self.dma_read.map(|read| read.disable());
         self.dma_write.map(|write| write.disable());
         spi.registers.cr.write(Control::SPIDIS::SET);
@@ -313,11 +319,6 @@ impl SpiHw {
         if self.role.get() == SpiRole::SpiSlave {
             spi.registers.idr.write(InterruptFlags::NSSR::SET);; // Disable NSSR
         }
-        self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.disable_clock(client_index)
-            }
-        );
     }
 
     /// Sets the approximate baud rate for the active peripheral,
