@@ -2,7 +2,6 @@ use core::cell::Cell;
 use kernel::common::cells::OptionalCell;
 use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
-use kernel::debug_gpio;
 use crate::pm;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
@@ -216,11 +215,17 @@ impl ImixClockManager {
 
         // Find a compatible clock
         let mut clockmask = self.nolock_clockmask.get();
-        let mut change_clockmask = 0xfff;
+        if (clockmask == 0x3ff) {
+        }
+        let mut change_clockmask = 0x3ff;
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
         for _i in 0..self.num_clients.get() { 
             if !self.clients[next_client].get_enabled() {
+                next_client += 1;
+                if next_client >= self.num_clients.get() {
+                    next_client = 0;
+                }
                 continue;
             }
             let next_clockmask = clockmask & 
@@ -260,7 +265,6 @@ impl ImixClockManager {
         let clock_changed = self.current_clock.get() != clock;
         self.current_clock.set(clock);
         if clock_changed {
-            debug_gpio!(0,toggle);
             let system_clock = self.convert_to_clock(clock);
             unsafe {
                 pm::PM.change_system_clock(system_clock);
@@ -380,7 +384,7 @@ impl ClockManager for ImixClockManager {
             // When a lock free client calls disable clock, recalculate 
             // nolock_clockmask
             let num_clients = self.num_clients.get();
-            let mut new_clockmask = 0xfff;
+            let mut new_clockmask = 0x3ff;
             for i in 0..num_clients { 
                 if !self.clients[i].get_need_lock() &&
                         self.clients[i].get_running() {

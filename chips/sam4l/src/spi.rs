@@ -24,6 +24,7 @@ use kernel::hil::spi::SpiSlaveClient;
 use kernel::{ClockInterface, ReturnCode};
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
+use kernel::debug_gpio;
 
 #[repr(C)]
 pub struct SpiRegisters {
@@ -284,7 +285,6 @@ impl SpiHw {
                 Ok(v) => {
                     self.client_index.set(v);
                     clock_pm::CM.set_need_lock(v, false);
-                    clock_pm::CM.set_clocklist(v, 0x080);
                     //clock_pm::CM.set_clocklist(v, 0x3fe);
                 }
                 Err(_e) => {} 

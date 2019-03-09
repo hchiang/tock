@@ -114,10 +114,10 @@ static mut PROCESSES: [Option<&'static kernel::procs::ProcessType>; NUM_PROCS] =
 pub static mut STACK_MEMORY: [u8; 0x2000] = [0; 0x2000];
 
 struct Imix {
-    pconsole: &'static capsules::process_console::ProcessConsole<
-        'static,
-        components::process_console::Capability,
-    >,
+    //pconsole: &'static capsules::process_console::ProcessConsole<
+    //    'static,
+    //    components::process_console::Capability,
+    //>,
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
@@ -283,10 +283,10 @@ pub unsafe fn reset_handler() {
     debug_gpio!(2, make_output);
     debug_gpio!(2, clear);
 
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
-        frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
-        startup_mode: sam4l::pm::OscillatorStartup::FastStart,
-    });
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32kAt48MHz);
+    //    frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
+    //    startup_mode: sam4l::pm::OscillatorStartup::FastStart,
+    //});
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
@@ -324,7 +324,7 @@ pub unsafe fn reset_handler() {
     hil::uart::Transmit::set_transmit_client(&sam4l::usart::USART3, uart_mux);
     hil::uart::Receive::set_receive_client(&sam4l::usart::USART3, uart_mux);
 
-    let pconsole = ProcessConsoleComponent::new(board_kernel, uart_mux).finalize();
+    //let pconsole = ProcessConsoleComponent::new(board_kernel, uart_mux).finalize();
     let console = ConsoleComponent::new(board_kernel, uart_mux).finalize();
 
     // Allow processes to communicate over BLE through the nRF51822
@@ -431,7 +431,7 @@ pub unsafe fn reset_handler() {
     //sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
-        pconsole,
+        //pconsole,
         console,
         alarm,
         gpio,
@@ -465,7 +465,7 @@ pub unsafe fn reset_handler() {
     rf233.reset();
     rf233.start();
 
-    imix.pconsole.start();
+    //imix.pconsole.start();
 
     // Optional kernel tests. Note that these might conflict
     // with normal operation (e.g., steal callbacks from drivers, etc.),

@@ -17,6 +17,7 @@ use crate::dma;
 use crate::pm;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
+use kernel::debug_gpio;
 
 // Register map for SAM4L USART
 #[repr(C)]
@@ -791,6 +792,7 @@ impl USART<'a> {
     pub fn transmit_callback(&self) {
         let usart = &USARTRegManager::new(&self);
         // enable TX
+        self.set_baud_rate(usart, self.baud_rate.get());
         self.enable_tx(usart);
         self.usart_tx_state.set(USARTStateTX::DMA_Transmitting);
 
@@ -951,12 +953,10 @@ impl uart::Transmit<'a> for USART<'a> {
             
             if self.client_index.is_none() {
                 unsafe {
-                let regval = clock_pm::CM.register(&USART0);
+                let regval = clock_pm::CM.register(&USART3);
                 match regval {
                     Ok(v) => {
                         self.client_index.set(v);
-                        clock_pm::CM.set_need_lock(v, false);
-                        clock_pm::CM.set_clocklist(v, 0x080);
                         //clock_pm::CM.set_clocklist(v, 0x3fe);
                     }
                     Err(_e) => {} 
@@ -1294,9 +1294,6 @@ impl spi::SpiMaster for USART<'a> {
 
 impl hil::clock_pm::ClockClient for USART<'a> {
     fn clock_enabled(&self) {
-        let usart = &USARTRegManager::new(&self);
-        self.set_baud_rate(usart, self.baud_rate.get());
-
         //if self.callback_rx_len.get() > 0 {
         //    self.receive_callback();
         //}

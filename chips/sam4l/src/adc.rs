@@ -29,6 +29,7 @@ use kernel::hil;
 use kernel::ReturnCode;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
+use kernel::debug_gpio;
 
 /// Representation of an ADC channel on the SAM4L.
 pub struct AdcChannel {
@@ -960,7 +961,6 @@ impl hil::adc::AdcHighSpeed for Adc {
                 match regval {
                     Ok(v) => {
                         self.client_index.set(v);
-                        clock_pm::CM.set_clocklist(v, 0x080);
                     }
                     Err(_e) => {} 
                 }
