@@ -877,6 +877,8 @@ impl hil::adc::Adc for Adc {
             });
             self.rx_length.set(0);
 
+            pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
+
             // store the buffer if it exists
             dma_buffer.map(|dma_buf| {
                 // change buffer back into a [u16]

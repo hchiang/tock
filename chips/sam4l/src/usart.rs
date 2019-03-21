@@ -17,7 +17,6 @@ use crate::dma;
 use crate::pm;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
-use kernel::debug_gpio;
 
 // Register map for SAM4L USART
 #[repr(C)]
@@ -713,8 +712,8 @@ impl USART<'a> {
     }
 
     fn set_baud_rate(&self, usart: &USARTRegManager, baud_rate: u32) {
-        self.baud_rate.set(baud_rate);
         let system_frequency = pm::get_system_frequency();
+        self.baud_rate.set(baud_rate);
 
         // The clock divisor is calculated differently in UART and SPI modes.
         match self.usart_mode.get() {
@@ -800,9 +799,9 @@ impl USART<'a> {
         if self.tx_dma.get().is_some() {
             self.tx_dma.get().map(move |dma| {
                 dma.enable();
-                self.tx_len.set(self.callback_tx_len.get());
                 dma.do_transfer(self.tx_dma_peripheral, 
                     self.callback_tx_data.take().unwrap(), self.callback_tx_len.get());
+                self.tx_len.set(self.callback_tx_len.get());
             });
         }
     }
@@ -957,7 +956,7 @@ impl uart::Transmit<'a> for USART<'a> {
                 match regval {
                     Ok(v) => {
                         self.client_index.set(v);
-                        //clock_pm::CM.set_clocklist(v, 0x3fe);
+                        clock_pm::CM.set_min_frequency(v, 8*self.baud_rate.get());
                     }
                     Err(_e) => {} 
                 }

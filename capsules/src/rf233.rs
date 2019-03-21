@@ -471,6 +471,7 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                     );
                 }
             }
+            // Called when radio turned on
             InternalState::START_TURNING_OFF => {
                 self.irq_pin.make_input();
                 self.irq_pin.clear();
@@ -682,6 +683,8 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                     self.power_client.map(|p| {
                         p.changed(self.radio_on.get());
                     });
+                    // TODO: disable gpio interrupt
+                    self.irq_pin.disable_interrupt();
                 }
             }
             // Do nothing; a call to start() is required to restart radio
@@ -691,6 +694,9 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                 // Toggle the sleep pin to take the radio out of sleep mode into
                 // InternalState::TRX_OFF, then transition directly to RX_AACK_ON.
                 self.sleep_pin.clear();
+                // TODO: Re-enable interrupt
+                self.irq_pin
+                    .enable_interrupt(INTERRUPT_ID, gpio::InterruptMode::RisingEdge);
                 self.state_transition_write(
                     RF233Register::TRX_STATE,
                     RF233TrxCmd::RX_AACK_ON as u8,

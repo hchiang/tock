@@ -285,7 +285,7 @@ impl SpiHw {
                 Ok(v) => {
                     self.client_index.set(v);
                     clock_pm::CM.set_need_lock(v, false);
-                    //clock_pm::CM.set_clocklist(v, 0x3fe);
+                    clock_pm::CM.set_min_frequency(v, self.baud_rate.get());
                 }
                 Err(_e) => {} 
             }

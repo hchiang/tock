@@ -121,29 +121,29 @@ struct Imix {
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
-    temp: &'static capsules::temperature::TemperatureSensor<'static>,
-    humidity: &'static capsules::humidity::HumiditySensor<'static>,
-    ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
+    //temp: &'static capsules::temperature::TemperatureSensor<'static>,
+    //humidity: &'static capsules::humidity::HumiditySensor<'static>,
+    //ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
     adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc>,
-    led: &'static capsules::led::LED<'static, sam4l::gpio::GPIOPin>,
-    button: &'static capsules::button::Button<'static, sam4l::gpio::GPIOPin>,
+    //led: &'static capsules::led::LED<'static, sam4l::gpio::GPIOPin>,
+    //button: &'static capsules::button::Button<'static, sam4l::gpio::GPIOPin>,
     rng: &'static capsules::rng::RngDriver<'static>,
-    analog_comparator: &'static capsules::analog_comparator::AnalogComparator<
-        'static,
-        sam4l::acifc::Acifc<'static>,
-    >,
+    //analog_comparator: &'static capsules::analog_comparator::AnalogComparator<
+    //    'static,
+    //    sam4l::acifc::Acifc<'static>,
+    //>,
     spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
     ipc: kernel::ipc::IPC,
-    ninedof: &'static capsules::ninedof::NineDof<'static>,
+    //ninedof: &'static capsules::ninedof::NineDof<'static>,
     radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
     udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
-    crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
-    usb_driver: &'static capsules::usb_user::UsbSyscallDriver<
-        'static,
-        capsules::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>,
-    >,
-    nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
-    nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
+    //crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
+    //usb_driver: &'static capsules::usb_user::UsbSyscallDriver<
+    //    'static,
+    //    capsules::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>,
+    //>,
+    //nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
+    //nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -170,19 +170,19 @@ impl kernel::Platform for Imix {
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules::spi::DRIVER_NUM => f(Some(self.spi)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
-            capsules::led::DRIVER_NUM => f(Some(self.led)),
-            capsules::button::DRIVER_NUM => f(Some(self.button)),
-            capsules::analog_comparator::DRIVER_NUM => f(Some(self.analog_comparator)),
-            capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
-            capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
-            capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
-            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
-            capsules::crc::DRIVER_NUM => f(Some(self.crc)),
-            capsules::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
+            //capsules::led::DRIVER_NUM => f(Some(self.led)),
+            //capsules::button::DRIVER_NUM => f(Some(self.button)),
+            //capsules::analog_comparator::DRIVER_NUM => f(Some(self.analog_comparator)),
+            //capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
+            //capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
+            //capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
+            //capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
+            //capsules::crc::DRIVER_NUM => f(Some(self.crc)),
+            //capsules::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
             capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
             capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
-            capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
-            capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
+            //capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
+            //capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
@@ -283,10 +283,10 @@ pub unsafe fn reset_handler() {
     debug_gpio!(2, make_output);
     debug_gpio!(2, clear);
 
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32kAt48MHz);
-    //    frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
-    //    startup_mode: sam4l::pm::OscillatorStartup::FastStart,
-    //});
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+        frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
+        startup_mode: sam4l::pm::OscillatorStartup::FastStart,
+    });
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
@@ -300,8 +300,8 @@ pub unsafe fn reset_handler() {
 
     power::configure_submodules(power::SubmoduleConfig {
         rf233: true,
-        nrf51422: true,
-        sensors: true,
+        nrf51422: false,
+        sensors: false,
         trng: true,
     });
 
@@ -328,8 +328,8 @@ pub unsafe fn reset_handler() {
     let console = ConsoleComponent::new(board_kernel, uart_mux).finalize();
 
     // Allow processes to communicate over BLE through the nRF51822
-    let nrf_serialization =
-        Nrf51822Component::new(&sam4l::usart::USART2, &sam4l::gpio::PB[07]).finalize();
+    //let nrf_serialization =
+    //    Nrf51822Component::new(&sam4l::usart::USART2, &sam4l::gpio::PB[07]).finalize();
 
     // # TIMER
     let ast = &sam4l::ast::AST;
@@ -341,14 +341,14 @@ pub unsafe fn reset_handler() {
     let alarm = AlarmDriverComponent::new(board_kernel, mux_alarm).finalize();
 
     // # I2C and I2C Sensors
-    let mux_i2c = static_init!(MuxI2C<'static>, MuxI2C::new(&sam4l::i2c::I2C2));
-    sam4l::i2c::I2C2.set_master_client(mux_i2c);
+    //let mux_i2c = static_init!(MuxI2C<'static>, MuxI2C::new(&sam4l::i2c::I2C2));
+    //sam4l::i2c::I2C2.set_master_client(mux_i2c);
 
-    let ambient_light = AmbientLightComponent::new(board_kernel, mux_i2c, mux_alarm).finalize();
-    let si7021 = SI7021Component::new(mux_i2c, mux_alarm).finalize();
-    let temp = TemperatureComponent::new(board_kernel, si7021).finalize();
-    let humidity = HumidityComponent::new(board_kernel, si7021).finalize();
-    let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize();
+    //let ambient_light = AmbientLightComponent::new(board_kernel, mux_i2c, mux_alarm).finalize();
+    //let si7021 = SI7021Component::new(mux_i2c, mux_alarm).finalize();
+    //let temp = TemperatureComponent::new(board_kernel, si7021).finalize();
+    //let humidity = HumidityComponent::new(board_kernel, si7021).finalize();
+    //let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize();
 
     // SPI MUX, SPI syscall driver and RF233 radio
     let mux_spi = static_init!(
@@ -372,10 +372,10 @@ pub unsafe fn reset_handler() {
 
     let adc = AdcComponent::new().finalize();
     let gpio = GpioComponent::new(board_kernel).finalize();
-    let led = LedComponent::new().finalize();
-    let button = ButtonComponent::new(board_kernel).finalize();
-    let crc = CrcComponent::new(board_kernel).finalize();
-    let analog_comparator = AcComponent::new().finalize();
+    //let led = LedComponent::new().finalize();
+    //let button = ButtonComponent::new(board_kernel).finalize();
+    //let crc = CrcComponent::new(board_kernel).finalize();
+    //let analog_comparator = AcComponent::new().finalize();
     let rng = RngComponent::new(board_kernel).finalize();
 
     // For now, assign the 802.15.4 MAC address on the device as
@@ -390,10 +390,10 @@ pub unsafe fn reset_handler() {
     // Can this initialize be pushed earlier, or into component? -pal
     rf233.initialize(&mut RF233_BUF, &mut RF233_REG_WRITE, &mut RF233_REG_READ);
     let (radio_driver, mux_mac) =
-        RadioComponent::new(board_kernel, rf233, PAN_ID, serial_num_bottom_16).finalize();
+        RadioComponent::new(board_kernel, rf233, mux_alarm, PAN_ID, serial_num_bottom_16).finalize();
 
-    let usb_driver = UsbComponent::new(board_kernel).finalize();
-    let nonvolatile_storage = NonvolatileStorageComponent::new(board_kernel).finalize();
+    //let usb_driver = UsbComponent::new(board_kernel).finalize();
+    //let nonvolatile_storage = NonvolatileStorageComponent::new(board_kernel).finalize();
 
     let local_ip_ifaces = static_init!(
         [IPAddr; 3],
@@ -422,43 +422,35 @@ pub unsafe fn reset_handler() {
     )
     .finalize();
 
-    //sam4l::clock_pm::CM.register(&sam4l::usart::USART0);
-    //sam4l::clock_pm::CM.register(&sam4l::usart::USART1);
-    //sam4l::clock_pm::CM.register(&sam4l::usart::USART2);
-    //sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
-    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
-    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
-    //sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
-
     let imix = Imix {
         //pconsole,
         console,
         alarm,
         gpio,
-        temp,
-        humidity,
-        ambient_light,
+        //temp,
+        //humidity,
+        //ambient_light,
         adc,
-        led,
-        button,
+        //led,
+        //button,
         rng,
-        analog_comparator,
-        crc,
+        //analog_comparator,
+        //crc,
         spi: spi_syscalls,
         ipc: kernel::ipc::IPC::new(board_kernel, &grant_cap),
-        ninedof,
+        //ninedof,
         radio_driver,
         udp_driver,
-        usb_driver,
-        nrf51822: nrf_serialization,
-        nonvolatile_storage: nonvolatile_storage,
+        //usb_driver,
+        //nrf51822: nrf_serialization,
+        //nonvolatile_storage: nonvolatile_storage,
     };
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
 
     // Need to reset the nRF on boot, toggle it's SWDIO
-    imix.nrf51822.reset();
-    imix.nrf51822.initialize();
+    //imix.nrf51822.reset();
+    //imix.nrf51822.initialize();
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
