@@ -3,7 +3,7 @@ use kernel::common::cells::OptionalCell;
 use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
 use crate::pm;
-use kernel::debug_gpio;
+use kernel::debug;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
@@ -229,7 +229,7 @@ impl ImixClockManager {
                 continue;
             }
             let next_clockmask = clockmask & 
-                                self.clients[next_client].get_clocklist();
+                                self.clients[next_client].get_clockmask();
             if next_clockmask == 0 {
                 if set_next_client == false {
                     set_next_client = true;
@@ -237,7 +237,7 @@ impl ImixClockManager {
                     self.change_clock.set(true);
                 }
                 let new_change_clockmask = change_clockmask & 
-                                    self.clients[next_client].get_clocklist();
+                                    self.clients[next_client].get_clockmask();
                 if new_change_clockmask != 0 {
                     change_clockmask = new_change_clockmask;
                 }
@@ -277,7 +277,7 @@ impl ImixClockManager {
             if !self.clients[i].get_enabled() {
                 continue;
             }
-            if clock & self.clients[i].get_clocklist() != 0 {
+            if clock & self.clients[i].get_clockmask() != 0 {
                 if self.clients[i].get_need_lock() {
                     self.lock_count.set(self.lock_count.get()+1);
                     self.clients[i].client_enabled();
@@ -330,16 +330,10 @@ impl ClockManager for ImixClockManager {
         }
 
         self.clients[client_index].set_enabled(true);
-        let client_clocks = self.clients[client_index].get_clocklist() &
-                            self.clients[client_index].get_clockmask();
+        let client_clocks = self.clients[client_index].get_clockmask();
 
-        // If there are no peripherals running or only no lock peripherals
-        if self.lock_count.get() == 0 && (self.nolock_clockmask.get() & 
-            client_clocks) != 0 {
-            self.update_clock();
-        }
         // The current clock is incompatible
-        else if client_clocks & self.current_clock.get() == 0 {
+        if client_clocks & self.current_clock.get() == 0 {
             // Choose what the next clock will be
             self.change_clock.set(true);
             let next_clockmask = self.change_clockmask.get() & client_clocks;
@@ -395,7 +389,6 @@ impl ClockManager for ImixClockManager {
             for i in 0..num_clients { 
                 if !self.clients[i].get_need_lock() &&
                         self.clients[i].get_running() {
-                    new_clockmask &= self.clients[i].get_clocklist();
                     new_clockmask &= self.clients[i].get_clockmask();
                 }
             }
