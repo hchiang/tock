@@ -216,7 +216,7 @@ impl ImixClockManager {
         self.change_clock.set(false);
 
         // Find a compatible clock
-        let mut clockmask = self.nolock_clockmask.get() & self.change_clockmask.get();
+        let mut clockmask = self.nolock_clockmask.get();
         let mut change_clockmask = ALLCLOCKS;
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
@@ -343,9 +343,9 @@ impl ClockManager for ImixClockManager {
             // Choose what the next clock will be
             self.change_clock.set(true);
             let next_clockmask = self.change_clockmask.get() & client_clocks;
-            if next_clockmask != 0 { 
-                self.change_clockmask.set(next_clockmask);
-            }
+            //if next_clockmask != 0 { 
+            self.change_clockmask.set(next_clockmask);
+            //}
 
             if self.lock_count.get() == 0 {
                 self.update_clock();
