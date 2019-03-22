@@ -29,7 +29,6 @@ use kernel::hil;
 use kernel::ReturnCode;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
-use kernel::debug_gpio;
 
 /// Representation of an ADC channel on the SAM4L.
 pub struct AdcChannel {
@@ -863,6 +862,20 @@ impl hil::adc::Adc for Adc {
             // reset the ADC peripheral
             regs.cr.write(Control::SWRST::SET);
 
+            // disable ADC
+            regs.cr.write(Control::DIS::SET);
+
+            // wait until status is enabled
+            let mut timeout = 10000;
+            while regs.sr.is_set(Status::EN) {
+                timeout -= 1;
+                if timeout == 0 {
+                    // ADC never disabled 
+                    return ReturnCode::FAIL;
+                }
+            }
+            pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
+
             self.client_index.map( |client_index|
                 unsafe {
                 clock_pm::CM.disable_clock(client_index)
@@ -876,8 +889,6 @@ impl hil::adc::Adc for Adc {
                 dma_buf
             });
             self.rx_length.set(0);
-
-            pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
 
             // store the buffer if it exists
             dma_buffer.map(|dma_buf| {
