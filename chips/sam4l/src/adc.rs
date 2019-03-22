@@ -29,6 +29,7 @@ use kernel::hil;
 use kernel::ReturnCode;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
+use kernel::debug_gpio;
 
 /// Representation of an ADC channel on the SAM4L.
 pub struct AdcChannel {
@@ -466,6 +467,26 @@ impl Adc {
         }
     }
 
+    fn disable(&self) -> ReturnCode {
+        let regs: &AdcRegisters = &*self.registers;
+        // disable ADC
+        regs.cr.write(Control::DIS::SET);
+
+        // wait until status is enabled
+        let mut timeout = 10000;
+        while regs.sr.is_set(Status::EN) {
+            timeout -= 1;
+            if timeout == 0 {
+                // ADC never disabled 
+                return ReturnCode::FAIL;
+            }
+        }
+        self.enabled.set(false);
+        scif::generic_clock_disable(scif::GenericClock::GCLK10);
+        pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
+        return ReturnCode::SUCCESS;
+    }
+
     /// Clear all status bits using the status clear register.
     fn clear_status(&self) {
         let regs: &AdcRegisters = &*self.registers;
@@ -862,25 +883,14 @@ impl hil::adc::Adc for Adc {
             // reset the ADC peripheral
             regs.cr.write(Control::SWRST::SET);
 
-            // disable ADC
-            regs.cr.write(Control::DIS::SET);
-
-            // wait until status is enabled
-            let mut timeout = 10000;
-            while regs.sr.is_set(Status::EN) {
-                timeout -= 1;
-                if timeout == 0 {
-                    // ADC never disabled 
-                    return ReturnCode::FAIL;
-                }
-            }
-            pm::disable_clock(Clock::PBA(PBAClock::ADCIFE));
+            self.disable();
 
             self.client_index.map( |client_index|
                 unsafe {
                 clock_pm::CM.disable_clock(client_index)
                 }
             );
+
             // stop DMA transfer if going. This should safely return a None if
             // the DMA was not being used
             let dma_buffer = self.rx_dma.map_or(None, |rx_dma| {
@@ -979,6 +989,7 @@ impl hil::adc::AdcHighSpeed for Adc {
                 }
                 }
             }
+            self.disable();
             self.client_index.map( |client_index| {
                 unsafe {
                 clock_pm::CM.set_min_frequency(client_index, frequency*32);
