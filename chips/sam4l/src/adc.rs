@@ -577,7 +577,7 @@ impl Adc {
                 clock_divisor = math::log_base_two(math::closest_power_of_two(divisor));
                 if clock_divisor > 2 {
                     clock_divisor -= 2;
-                else {
+                } else {
                     clock_divisor = 0;
                 }
                 clock_divisor = cmp::min(cmp::max(clock_divisor, 0), 7); // keep in bounds
