@@ -12,7 +12,7 @@ use crate::dma::DMAPeripheral;
 use crate::pm;
 use core::cell::Cell;
 use core::cmp;
-use kernel::common::cells::OptionalCell;
+use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::peripherals::{PeripheralManagement, PeripheralManager};
 use kernel::common::registers::{self, register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
@@ -24,7 +24,6 @@ use kernel::hil::spi::SpiSlaveClient;
 use kernel::{ClockInterface, ReturnCode};
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
-use kernel::debug_gpio;
 
 #[repr(C)]
 pub struct SpiRegisters {
@@ -197,6 +196,9 @@ pub struct SpiHw {
     role: Cell<SpiRole>,
 
     baud_rate: Cell<u32>,
+    callback_write_buffer: TakeCell<'static, [u8]>,
+    callback_read_buffer: TakeCell<'static, [u8]>,
+    callback_len: Cell<usize>,
     client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
 }
 
@@ -243,6 +245,9 @@ impl SpiHw {
             role: Cell::new(SpiRole::SpiMaster),
 
             baud_rate: Cell::new(0),
+            callback_write_buffer: TakeCell::empty(),
+            callback_read_buffer: TakeCell::empty(),
+            callback_len: Cell::new(0),
             client_index: OptionalCell::empty(),
         }
     }
@@ -277,25 +282,6 @@ impl SpiHw {
         if self.role.get() == SpiRole::SpiSlave {
             spi.registers.ier.write(InterruptFlags::NSSR::SET); // Enable NSSR
         }
-
-        if self.client_index.is_none() {
-            unsafe {
-            let regval = clock_pm::CM.register(&SPI);
-            match regval {
-                Ok(v) => {
-                    self.client_index.set(v);
-                    clock_pm::CM.set_need_lock(v, false);
-                    clock_pm::CM.set_min_frequency(v, self.baud_rate.get());
-                }
-                Err(_e) => {} 
-            }
-            }
-        }
-        self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.enable_clock(client_index)
-            }
-        );
     }
 
     fn disable(&self) {
@@ -306,12 +292,6 @@ impl SpiHw {
         // still in the TX buffer.
         while !spi.registers.sr.is_set(Status::TXEMPTY) {}
 
-        self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.disable_clock(client_index)
-            }
-        );
-
         self.dma_read.map(|read| read.disable());
         self.dma_write.map(|write| write.disable());
         spi.registers.cr.write(Control::SPIDIS::SET);
@@ -319,6 +299,12 @@ impl SpiHw {
         if self.role.get() == SpiRole::SpiSlave {
             spi.registers.idr.write(InterruptFlags::NSSR::SET);; // Disable NSSR
         }
+
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.disable_clock(client_index)
+            }
+        );
     }
 
     /// Sets the approximate baud rate for the active peripheral,
@@ -336,19 +322,20 @@ impl SpiHw {
         let mut real_rate = rate;
         let clock = pm::get_system_frequency();
 
-        if rate != self.baud_rate.get() {
-            self.baud_rate.set(rate);
+        if real_rate < 188235 {
+            real_rate = 188235;
+        }
+
+        if real_rate != self.baud_rate.get() {
+            self.baud_rate.set(real_rate);
             self.client_index.map( |client_index| {
                 unsafe {
-                clock_pm::CM.set_min_frequency(client_index, rate);
-                clock_pm::CM.set_max_frequency(client_index, rate*255);
+                clock_pm::CM.set_min_frequency(client_index, real_rate);
+                clock_pm::CM.set_max_frequency(client_index, real_rate*255);
                 }
             });
         }
 
-        if real_rate < 188235 {
-            real_rate = 188235;
-        }
         if real_rate > clock {
             real_rate = clock;
         }
@@ -619,7 +606,28 @@ impl spi::SpiMaster for SpiHw {
             return ReturnCode::EBUSY;
         }
 
-        self.read_write_bytes(Some(write_buffer), read_buffer, len)
+        self.callback_write_buffer.put(Some(write_buffer));
+        self.callback_read_buffer.put(read_buffer);
+        self.callback_len.set(len);
+
+        if self.client_index.is_none() {
+            unsafe {
+            let regval = clock_pm::CM.register(&SPI);
+            match regval {
+                Ok(v) => {
+                    self.client_index.set(v);
+                    clock_pm::CM.set_min_frequency(v, self.baud_rate.get());
+                }
+                Err(_e) => {} 
+            }
+            }
+        }
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.enable_clock(client_index)
+            }
+        );
+        return ReturnCode::SUCCESS;
     }
 
     fn set_rate(&self, rate: u32) -> u32 {
@@ -773,6 +781,9 @@ impl DMAClient for SpiHw {
 impl ClockClient for SpiHw {
     fn clock_enabled(&self) {
         self.set_baud_rate(self.baud_rate.get());
+        let write_buf = self.callback_write_buffer.take();
+        let read_buf = self.callback_read_buffer.take();
+        self.read_write_bytes(write_buf, read_buf, self.callback_len.get());
     }
     fn clock_disabled(&self) {}
 }
