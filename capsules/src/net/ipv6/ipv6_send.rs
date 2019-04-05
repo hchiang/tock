@@ -233,7 +233,7 @@ impl<A: time::Alarm> time::Client for IP6SendStruct<'a, A> {
 impl<A: time::Alarm> TxClient for IP6SendStruct<'a, A> {
     fn send_done(&self, tx_buf: &'static mut [u8], acked: bool, result: ReturnCode) {
         self.tx_buf.replace(tx_buf);
-        if result != ReturnCode::SUCCESS {
+        if result != ReturnCode::SUCCESS && result != ReturnCode::ENOACK {
             debug!("Send Failed: {:?}, acked: {}", result, acked);
         }
         // Below code adds delay between fragments. Despite some efforts
