@@ -134,7 +134,7 @@ struct Imix {
     //>,
     spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
     ipc: kernel::ipc::IPC,
-    //ninedof: &'static capsules::ninedof::NineDof<'static>,
+    ninedof: &'static capsules::ninedof::NineDof<'static>,
     radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
     udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
     //crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
@@ -176,7 +176,7 @@ impl kernel::Platform for Imix {
             //capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
             //capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
             //capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
-            //capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
+            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
             //capsules::crc::DRIVER_NUM => f(Some(self.crc)),
             //capsules::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
             capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
@@ -341,14 +341,14 @@ pub unsafe fn reset_handler() {
     let alarm = AlarmDriverComponent::new(board_kernel, mux_alarm).finalize();
 
     // # I2C and I2C Sensors
-    //let mux_i2c = static_init!(MuxI2C<'static>, MuxI2C::new(&sam4l::i2c::I2C2));
-    //sam4l::i2c::I2C2.set_master_client(mux_i2c);
+    let mux_i2c = static_init!(MuxI2C<'static>, MuxI2C::new(&sam4l::i2c::I2C2));
+    sam4l::i2c::I2C2.set_master_client(mux_i2c);
 
     //let ambient_light = AmbientLightComponent::new(board_kernel, mux_i2c, mux_alarm).finalize();
     //let si7021 = SI7021Component::new(mux_i2c, mux_alarm).finalize();
     //let temp = TemperatureComponent::new(board_kernel, si7021).finalize();
     //let humidity = HumidityComponent::new(board_kernel, si7021).finalize();
-    //let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize();
+    let ninedof = NineDofComponent::new(board_kernel, mux_i2c, &sam4l::gpio::PC[13]).finalize();
 
     // SPI MUX, SPI syscall driver and RF233 radio
     let mux_spi = static_init!(
@@ -438,7 +438,7 @@ pub unsafe fn reset_handler() {
         //crc,
         spi: spi_syscalls,
         ipc: kernel::ipc::IPC::new(board_kernel, &grant_cap),
-        //ninedof,
+        ninedof,
         radio_driver,
         udp_driver,
         //usb_driver,

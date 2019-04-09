@@ -18,6 +18,8 @@ use kernel::common::registers::{register_bitfields, FieldValue, ReadOnly, ReadWr
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ClockInterface;
+use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use crate::clock_pm;
 
 // Listing of all registers related to the TWIM peripheral.
 // Section 27.9 of the datasheet
@@ -560,6 +562,8 @@ pub struct I2CHw {
     slave_write_buffer: TakeCell<'static, [u8]>,
     slave_write_buffer_len: Cell<u8>,
     slave_write_buffer_index: Cell<u8>,
+
+    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
 }
 
 impl PeripheralManagement<TWIMClock> for I2CHw {
@@ -689,6 +693,8 @@ impl I2CHw {
             slave_write_buffer: TakeCell::empty(),
             slave_write_buffer_len: Cell::new(0),
             slave_write_buffer_index: Cell::new(0),
+
+            client_index: OptionalCell::empty(),
         }
     }
 
@@ -1304,6 +1310,25 @@ impl DMAClient for I2CHw {
 impl hil::i2c::I2CMaster for I2CHw {
     /// This enables the entire I2C peripheral
     fn enable(&self) {
+        if self.client_index.is_none() {
+            unsafe {
+            let regval = clock_pm::CM.register(&I2C2);
+            match regval {
+                Ok(v) => {
+                    self.client_index.set(v);
+                    clock_pm::CM.set_min_frequency(v, 4*400000); 
+                    clock_pm::CM.set_need_lock(v, false);
+                }
+                Err(_e) => {} 
+            }
+            }
+        }
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.enable_clock(client_index)
+            }
+        );
+        
         //disable the i2c slave peripheral
         hil::i2c::I2CSlave::disable(self);
 
@@ -1333,6 +1358,11 @@ impl hil::i2c::I2CMaster for I2CHw {
         let twim = &TWIMRegisterManager::new(&self);
         twim.registers.cr.write(Control::MDIS::SET);
         self.disable_interrupts(twim);
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.disable_clock(client_index)
+            }
+        );
     }
 
     fn write(&self, addr: u8, data: &'static mut [u8], len: u8) {
@@ -1425,3 +1455,11 @@ impl hil::i2c::I2CSlave for I2CHw {
 }
 
 impl hil::i2c::I2CMasterSlave for I2CHw {}
+
+impl ClockClient for I2CHw {
+    fn clock_enabled(&self) {
+        let twim = &TWIMRegisterManager::new(&self);
+        self.set_bus_speed(twim);
+    }
+    fn clock_disabled(&self) {}
+}
