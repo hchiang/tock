@@ -143,7 +143,7 @@ struct Imix {
     //    capsules::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>,
     //>,
     //nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
-    //nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
+    nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -182,7 +182,7 @@ impl kernel::Platform for Imix {
             capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
             capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
             //capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
-            //capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
+            capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
@@ -393,7 +393,7 @@ pub unsafe fn reset_handler() {
         RadioComponent::new(board_kernel, rf233, mux_alarm, PAN_ID, serial_num_bottom_16).finalize();
 
     //let usb_driver = UsbComponent::new(board_kernel).finalize();
-    //let nonvolatile_storage = NonvolatileStorageComponent::new(board_kernel).finalize();
+    let nonvolatile_storage = NonvolatileStorageComponent::new(board_kernel).finalize();
 
     let local_ip_ifaces = static_init!(
         [IPAddr; 3],
@@ -443,7 +443,7 @@ pub unsafe fn reset_handler() {
         udp_driver,
         //usb_driver,
         //nrf51822: nrf_serialization,
-        //nonvolatile_storage: nonvolatile_storage,
+        nonvolatile_storage: nonvolatile_storage,
     };
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());

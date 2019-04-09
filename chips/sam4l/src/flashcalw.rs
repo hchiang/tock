@@ -547,7 +547,8 @@ impl FLASHCALW {
                 self.client_index.map( |client_index|
                     unsafe {
                         clock_pm::CM.set_need_lock(client_index, true);
-                        clock_pm::CM.set_clocklist(client_index, 0x08);
+                        //TODO prefer 4M?
+                        clock_pm::CM.set_clocklist(client_index, 0x3fc);
                         clock_pm::CM.enable_clock(client_index)
                     }
                 );
@@ -588,7 +589,7 @@ impl FLASHCALW {
                 self.client_index.map( |client_index|
                     unsafe {
                         clock_pm::CM.set_need_lock(client_index, true);
-                        clock_pm::CM.set_clocklist(client_index, 0x08);
+                        clock_pm::CM.set_clocklist(client_index, 0x3fc);
                         clock_pm::CM.enable_clock(client_index)
                     }
                 );
@@ -904,7 +905,7 @@ impl FLASHCALW {
         self.client_index.map( |client_index|
             unsafe {
                 clock_pm::CM.set_need_lock(client_index, false);
-                clock_pm::CM.set_clocklist(client_index, 0x80);
+                clock_pm::CM.set_clocklist(client_index, 0x3ff);
                 clock_pm::CM.enable_clock(client_index);
             }
         );
