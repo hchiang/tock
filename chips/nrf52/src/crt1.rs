@@ -1,19 +1,14 @@
-use cortexm4::{generic_isr, nvic, systick_handler, SVC_Handler};
+use cortexm4::{generic_isr, hard_fault_handler, nvic, svc_handler, systick_handler};
+use tock_rt0;
 
 /*
  * Adapted from crt1.c which was relicensed by the original author from
  * GPLv3 to Apache 2.0.
  * The original version of the file, under GPL can be found at
- * https://github.com/SoftwareDefinedBuildings/
- *     stormport/blob/rebase0/tos/platforms/storm/stormcrt1.c
+ * https://github.com/SoftwareDefinedBuildings/stormport/blob/rebase0/tos/platforms/storm/stormcrt1.c
  *
  * Copyright 2016, Michael Andersen <m.andersen@eecs.berkeley.edu>
  */
-
-/* https://github.com/NordicSemiconductor/nrf52-hardware-startup-hands-on/blob/master/
-           pca10040/s132/arm5_no_packs/RTE/Device/nRF52832_xxAA/arm_startup_nrf52.s */
-/* https://github.com/NordicSemiconductor/nRF52-ble-app-lbs/blob/master/
-           pca10040/s132/arm5_no_packs/RTE/Device/nRF52832_xxAA/system_nrf52.c */
 
 extern "C" {
     // Symbols defined in the linker file
@@ -30,43 +25,66 @@ extern "C" {
 }
 
 unsafe extern "C" fn unhandled_interrupt() {
-    'loop0: loop {}
+    let mut interrupt_number: u32;
+
+    // IPSR[8:0] holds the currently active interrupt
+    asm!(
+    "mrs    r0, ipsr                    "
+    : "={r0}"(interrupt_number)
+    :
+    : "r0"
+    :
+    );
+
+    interrupt_number = interrupt_number & 0x1ff;
+    panic!("Unhandled Interrupt. ISR {} is active.", interrupt_number);
 }
 
-unsafe extern "C" fn hard_fault_handler() {
-    'loop0: loop {}
-}
-
-#[link_section=".vectors"]
-#[cfg_attr(rustfmt, rustfmt_skip)]
-// no_mangle Ensures that the symbol is kept until the final binary
-#[no_mangle]
-pub static BASE_VECTORS: [unsafe extern fn(); 16] = [
-    _estack, reset_handler,
-    /* NMI */           unhandled_interrupt,
-    /* Hard Fault */    hard_fault_handler,
-    /* MemManage */     unhandled_interrupt,
-    /* BusFault */      unhandled_interrupt,
-    /* UsageFault*/     unhandled_interrupt,
-    unhandled_interrupt, unhandled_interrupt, unhandled_interrupt,
+#[link_section = ".vectors"]
+#[used]
+// ensures that the symbol is kept until the final binary
+/// ARM Cortex M Vector Table
+pub static BASE_VECTORS: [unsafe extern "C" fn(); 16] = [
+    // Stack Pointer
+    _estack,
+    // Reset Handler
+    reset_handler,
+    // NMI
     unhandled_interrupt,
-    /* SVC */           SVC_Handler,
-    /* DebugMon */      unhandled_interrupt,
+    // Hard Fault
+    hard_fault_handler,
+    // Memory Managment Fault
     unhandled_interrupt,
-    /* PendSV */        unhandled_interrupt,
-    /* SysTick */       systick_handler
+    // Bus Fault
+    unhandled_interrupt,
+    // Usage Fault
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // SVCall
+    svc_handler,
+    // Reserved for Debug
+    unhandled_interrupt,
+    // Reserved
+    unhandled_interrupt,
+    // PendSv
+    unhandled_interrupt,
+    // SysTick
+    systick_handler,
 ];
 
 #[link_section = ".vectors"]
-#[no_mangle] // Ensures that the symbol is kept until the final binary
+#[used] // Ensures that the symbol is kept until the final binary
 pub static IRQS: [unsafe extern "C" fn(); 80] = [generic_isr; 80];
 
 #[no_mangle]
 pub unsafe extern "C" fn init() {
-    let mut current_block;
-    let mut p_src: *mut u32;
-    let mut p_dest: *mut u32;
-
     // Apply early initialization workarounds for anomalies documented on
     // 2015-12-11 nRF52832 Errata v1.2
     // http://infocenter.nordicsemi.com/pdf/nRF52832_Errata_v1.2.pdf
@@ -134,45 +152,8 @@ pub unsafe extern "C" fn init() {
     // or System OFF mode" found at the Errata doc
     *(0x40000ee4i32 as (*mut u32)) = *(0x10000258i32 as (*mut u32)) & 0x4fu32;
 
-    // Move the relocate segment. This assumes it is located after the text
-    // segment, which is where the storm linker file puts it
-    p_src = &mut _etext as (*mut u32);
-    p_dest = &mut _srelocate as (*mut u32);
-    if p_src != p_dest {
-        current_block = 1;
-    } else {
-        current_block = 2;
-    }
-    'loop1: loop {
-        if current_block == 1 {
-            if !(p_dest < &mut _erelocate as (*mut u32)) {
-                current_block = 2;
-                continue;
-            }
-            *{
-                let _old = p_dest;
-                p_dest = p_dest.offset(1isize);
-                _old
-            } = *{
-                let _old = p_src;
-                p_src = p_src.offset(1isize);
-                _old
-            };
-            current_block = 1;
-        } else {
-            p_dest = &mut _szero as (*mut u32);
-            break;
-        }
-    }
-    'loop3: loop {
-        if !(p_dest < &mut _ezero as (*mut u32)) {
-            break;
-        }
-        *{
-            let _old = p_dest;
-            p_dest = p_dest.offset(1isize);
-            _old
-        } = 0u32;
-    }
+    tock_rt0::init_data(&mut _etext, &mut _srelocate, &mut _erelocate);
+    tock_rt0::zero_bss(&mut _szero, &mut _ezero);
+
     nvic::enable_all();
 }

@@ -44,22 +44,22 @@
 //! have had interrupts enabled.
 
 /// Syscall driver number.
-pub const DRIVER_NUM: usize = 0x00000004;
+use crate::driver;
+pub const DRIVER_NUM: usize = driver::NUM::GPIO as usize;
 
-use core::cell::Cell;
-use kernel::{AppId, Callback, Driver, ReturnCode};
 use kernel::hil::gpio::{Client, InputMode, InterruptMode, Pin, PinCtl};
+use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 
-pub struct GPIO<'a, G: Pin + 'a> {
+pub struct GPIO<'a, G: Pin> {
     pins: &'a [&'a G],
-    callback: Cell<Option<Callback>>,
+    apps: Grant<Option<Callback>>,
 }
 
-impl<'a, G: Pin + PinCtl> GPIO<'a, G> {
-    pub fn new(pins: &'a [&'a G]) -> GPIO<'a, G> {
+impl<G: Pin + PinCtl> GPIO<'a, G> {
+    pub fn new(pins: &'a [&'a G], grant: Grant<Option<Callback>>) -> GPIO<'a, G> {
         GPIO {
             pins: pins,
-            callback: Cell::new(None),
+            apps: grant,
         }
     }
 
@@ -106,37 +106,42 @@ impl<'a, G: Pin + PinCtl> GPIO<'a, G> {
     }
 }
 
-impl<'a, G: Pin> Client for GPIO<'a, G> {
+impl<G: Pin> Client for GPIO<'a, G> {
     fn fired(&self, pin_num: usize) {
         // read the value of the pin
         let pins = self.pins.as_ref();
         let pin_state = pins[pin_num].read();
 
         // schedule callback with the pin number and value
-        if self.callback.get().is_some() {
-            self.callback
-                .get()
-                .unwrap()
-                .schedule(pin_num, pin_state as usize, 0);
-        }
+        self.apps.each(|callback| {
+            callback.map(|mut cb| cb.schedule(pin_num, pin_state as usize, 0));
+        });
     }
 }
 
-impl<'a, G: Pin + PinCtl> Driver for GPIO<'a, G> {
+impl<G: Pin + PinCtl> Driver for GPIO<'a, G> {
     /// Subscribe to GPIO pin events.
     ///
     /// ### `subscribe_num`
     ///
     /// - `0`: Subscribe to interrupts from all pins with interrupts enabled.
     ///        The callback signature is `fn(pin_num: usize, pin_state: bool)`
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             // subscribe to all pin interrupts (no affect or reliance on
             // individual pins being configured as interrupts)
-            0 => {
-                self.callback.set(Some(callback));
-                ReturnCode::SUCCESS
-            }
+            0 => self
+                .apps
+                .enter(app_id, |app, _| {
+                    **app = callback;
+                    ReturnCode::SUCCESS
+                })
+                .unwrap_or_else(|err| err.into()),
 
             // default
             _ => ReturnCode::ENOSUPPORT,

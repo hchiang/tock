@@ -1,74 +1,54 @@
-#![feature(asm, core_intrinsics, unique, nonzero)]
-#![feature(const_fn, const_cell_new, const_unsafe_cell_new, lang_items)]
+//! Core Tock Kernel
+//!
+//! The kernel crate implements the core features of Tock as well as shared
+//! code that many chips, capsules, and boards use. It also holds the Hardware
+//! Interface Layer (HIL) definitions.
+//!
+//! Most `unsafe` code is in this kernel crate.
+
+#![feature(core_intrinsics, ptr_internals, const_fn)]
+#![feature(try_from, panic_info_message)]
+#![feature(in_band_lifetimes, crate_visibility_modifier)]
+#![feature(associated_type_defaults)]
+#![warn(unreachable_pub)]
 #![no_std]
 
+pub mod capabilities;
 #[macro_use]
 pub mod common;
-
-pub mod callback;
-pub mod grant;
+pub mod component;
 #[macro_use]
 pub mod debug;
-pub mod driver;
-pub mod ipc;
-pub mod mem;
-pub mod memop;
-pub mod returncode;
 pub mod hil;
+pub mod introspection;
+pub mod ipc;
+pub mod syscall;
 
-// Work around https://github.com/rust-lang-nursery/rustfmt/issues/6
-// It's a little sad that we have to skip the whole module, but that's
-// better than the unmaintainable pile 'o strings IMO
-#[cfg_attr(rustfmt, rustfmt_skip)]
-pub mod process;
-
-pub mod support;
-
-mod sched;
-
-mod syscall;
+mod callback;
+mod driver;
+mod grant;
+mod mem;
+mod memop;
 mod platform;
+mod process;
+mod returncode;
+mod sched;
+mod tbfheader;
 
-pub use callback::{AppId, Callback};
-pub use driver::Driver;
-pub use grant::Grant;
-pub use mem::{AppPtr, AppSlice, Private, Shared};
-pub use platform::{mpu, systick, Chip, Platform};
-pub use platform::systick::SysTick;
-pub use process::{Process, State};
-pub use returncode::ReturnCode;
+pub use crate::callback::{AppId, Callback};
+pub use crate::driver::Driver;
+pub use crate::grant::Grant;
+pub use crate::mem::{AppPtr, AppSlice, Private, Shared};
+pub use crate::platform::systick::SysTick;
+pub use crate::platform::{mpu, Chip, Platform};
+pub use crate::platform::{ClockInterface, NoClockControl, NO_CLOCK_CONTROL};
+pub use crate::returncode::ReturnCode;
+pub use crate::sched::Kernel;
 
-/// Main loop.
-pub fn main<P: Platform, C: Chip>(
-    platform: &P,
-    chip: &mut C,
-    processes: &'static mut [Option<process::Process<'static>>],
-    ipc: &ipc::IPC,
-) {
-    let processes = unsafe {
-        process::PROCS = processes;
-        &mut process::PROCS
-    };
-
-    loop {
-        unsafe {
-            chip.service_pending_interrupts();
-
-            for (i, p) in processes.iter_mut().enumerate() {
-                p.as_mut().map(|process| {
-                    sched::do_process(platform, chip, process, AppId::new(i), ipc);
-                });
-                if chip.has_pending_interrupts() {
-                    break;
-                }
-            }
-
-            support::atomic(|| {
-                if !chip.has_pending_interrupts() && process::processes_blocked() {
-                    chip.prepare_for_sleep();
-                    support::wfi();
-                }
-            });
-        };
-    }
+// Export only select items from the process module. To remove the name conflict
+// this cannot be called `process`, so we use a shortened version. These
+// functions and types are used by board files to setup the platform and setup
+// processes.
+pub mod procs {
+    pub use crate::process::{load_processes, FaultResponse, FunctionCall, Process, ProcessType};
 }

@@ -16,7 +16,12 @@ impl<C: SetClock> ClockCM<C> {
 
 impl<C: SetClock> Driver for ClockCM<C> {
 
-    fn subscribe(&self, subscribe_num: usize, _: Callback) -> ReturnCode {
+    fn subscribe(
+        &self, 
+        subscribe_num: usize, 
+        _callback: Option<Callback>, 
+        _app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
             // default
             _ => ReturnCode::ENOSUPPORT,

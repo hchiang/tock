@@ -1,10 +1,8 @@
 //! A dummy SPI client to test the SPI implementation
 
-extern crate kernel;
 use kernel::hil::gpio;
 use kernel::hil::gpio::Pin;
 use kernel::hil::spi::{self, SpiSlave};
-use sam4l;
 use sam4l::spi::SPI as SPI_SLAVE;
 
 #[allow(unused_variables,dead_code)]
@@ -77,7 +75,7 @@ pub unsafe fn spi_slave_dummy_test() {
 
     // Hint: Temporarily, when switching between master and slave dummy code,
     // - uncomment the right line at the end of reset_handler in main.rs
-    // - uncomment the right client at the end of xfer_done in spi.rs
+    // - uncomment the right client at the end of transfer_done in spi.rs
     // - uncomment 240-242 in main.rs for slave and comment it for master
 
     // YES interrupts are up, prints 0x07 all the way

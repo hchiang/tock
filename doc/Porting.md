@@ -30,9 +30,8 @@ architecture-specific code in Tock, the list is pretty much:
 
 It would likely be fairly easy to port Tock to another ARM Cortex M
 (specifically the M0+, M23, M3, or M7). It will probably be more work to port
-Tock to a non-ARM architecture. While we aim to be architecture agnostic, we
-have not exercised this path at all and there will likely be unforeseen
-challenges.
+Tock to a non-ARM architecture. While we aim to be architecture agnostic,
+we have yet to have a non-Cortex-M architecture so issues may exist.
 
 If you are interested in porting Tock to a new architecture, it's likely best
 to reach out to us via email or IRC before digging in too deep.
@@ -114,9 +113,7 @@ include ../Makefile.common      # ../ assumes board lives in $(TOCK)/boards/<boa
 ```
 
 Tock provides `boards/Makefile.common` that drives most of the build system.
-This Makefile handles things such as automatically selecting the correct Rust
-nightly and driving [Xargo](https://github.com/japaric/xargo), a tool to build
-sysroots for non-standard architectures. In general, you should not need to
+In general, you should not need to
 dig into this Makefile -- if something doesn't seem to be working, hop on IRC
 and ask.
 
@@ -147,9 +144,10 @@ that explains how to program the board:
 
 ### Loading Apps
 
-You can create a custom
-[Makefile-app](https://github.com/helena-project/tock/blob/master/boards/imix/Makefile-app)
-and include the commands needed to program an app and kernels on your board.
+Ideally, [Tockloader](https://github.com/tock/tockloader) will support loading
+apps on to your board (perhaps with some flags set to specific values). If that
+is not the case, please create an issue on the Tockloader repo so we can update
+the tool to support loading code onto your board.
 
 ### Common Pitfalls
 

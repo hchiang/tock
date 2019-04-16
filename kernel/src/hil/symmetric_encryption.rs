@@ -2,7 +2,7 @@
 //!
 //! see boards/imix/src/aes_test.rs for example usage
 
-use returncode::ReturnCode;
+use crate::returncode::ReturnCode;
 
 /// Implement this trait and use `set_client()` in order to receive callbacks from an `AES128`
 /// instance.
@@ -18,21 +18,21 @@ pub const AES128_KEY_SIZE: usize = 16;
 pub trait AES128<'a> {
     /// Enable the AES hardware.
     /// Must be called before any other methods
-    fn enable(&self);
+    fn enable(&'a self);
 
     /// Disable the AES hardware
-    fn disable(&self);
+    fn disable(&'a self);
 
     /// Set the client instance which will receive `crypt_done()` callbacks
     fn set_client(&'a self, client: &'a Client<'a>);
 
     /// Set the encryption key.
     /// Returns `EINVAL` if length is not `AES128_KEY_SIZE`
-    fn set_key(&self, key: &[u8]) -> ReturnCode;
+    fn set_key(&'a self, key: &[u8]) -> ReturnCode;
 
     /// Set the IV (or initial counter).
     /// Returns `EINVAL` if length is not `AES128_BLOCK_SIZE`
-    fn set_iv(&self, iv: &[u8]) -> ReturnCode;
+    fn set_iv(&'a self, iv: &[u8]) -> ReturnCode;
 
     /// Begin a new message (with the configured IV) when `crypt()` is
     /// next called.  Multiple calls to `crypt()` may be made between
@@ -41,7 +41,7 @@ pub trait AES128<'a> {
     ///
     /// If an encryption operation is in progress, this method instead
     /// has no effect.
-    fn start_message(&self);
+    fn start_message(&'a self);
 
     /// Request an encryption/decryption
     ///
@@ -86,14 +86,14 @@ pub trait AES128<'a> {
     ) -> Option<(ReturnCode, Option<&'a mut [u8]>, &'a mut [u8])>;
 }
 
-pub trait AES128Ctr {
+pub trait AES128Ctr<'a> {
     /// Call before `AES128::crypt()` to perform AES128Ctr
-    fn set_mode_aes128ctr(&self, encrypting: bool);
+    fn set_mode_aes128ctr(&'a self, encrypting: bool);
 }
 
-pub trait AES128CBC {
+pub trait AES128CBC<'a> {
     /// Call before `AES128::crypt()` to perform AES128CBC
-    fn set_mode_aes128cbc(&self, encrypting: bool);
+    fn set_mode_aes128cbc(&'a self, encrypting: bool);
 }
 
 pub trait CCMClient {
@@ -109,6 +109,8 @@ pub trait CCMClient {
 pub const CCM_NONCE_LENGTH: usize = 13;
 
 pub trait AES128CCM<'a> {
+    fn enable(&'a self);
+    fn disable(&'a self);
     /// Set the client instance which will receive `crypt_done()` callbacks
     fn set_client(&'a self, client: &'a CCMClient);
 

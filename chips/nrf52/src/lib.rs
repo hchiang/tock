@@ -1,26 +1,21 @@
-#![feature(asm, concat_idents, const_fn, const_cell_new, try_from)]
+#![feature(asm, const_fn, core_intrinsics, try_from)]
 #![no_std]
 #![crate_name = "nrf52"]
 #![crate_type = "rlib"]
-extern crate cortexm4;
-#[allow(unused_imports)]
-#[macro_use(debug)]
-extern crate kernel;
-extern crate nrf5x;
 
-#[macro_use]
-extern crate bitfield;
-
-mod peripheral_registers;
-
+pub mod adc;
 pub mod chip;
+pub mod clock;
 pub mod crt1;
+mod deferred_call_tasks;
 pub mod ficr;
+pub mod i2c;
 pub mod nvmc;
+pub mod ppi;
+pub mod pwm;
 pub mod radio;
+pub mod spi;
 pub mod uart;
 pub mod uicr;
-pub mod spi;
-pub mod i2c;
 
-pub use crt1::init;
+pub use crate::crt1::init;

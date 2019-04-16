@@ -50,12 +50,13 @@
 //!   of the button.
 
 use core::cell::Cell;
-use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 use kernel::hil;
 use kernel::hil::gpio::{Client, InterruptMode};
+use kernel::{AppId, Callback, Driver, Grant, ReturnCode};
 
 /// Syscall driver number.
-pub const DRIVER_NUM: usize = 0x00000003;
+use crate::driver;
+pub const DRIVER_NUM: usize = driver::NUM::BUTTON as usize;
 
 /// This capsule keeps track for each app of which buttons it has a registered
 /// interrupt for. `SubscribeMap` is a bit array where bits are set to one if
@@ -80,12 +81,12 @@ pub enum ButtonState {
 
 /// Manages the list of GPIO pins that are connected to buttons and which apps
 /// are listening for interrupts from which buttons.
-pub struct Button<'a, G: hil::gpio::Pin + 'a> {
+pub struct Button<'a, G: hil::gpio::Pin> {
     pins: &'a [(&'a G, GpioMode)],
     apps: Grant<(Option<Callback>, SubscribeMap)>,
 }
 
-impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Button<'a, G> {
+impl<G: hil::gpio::Pin + hil::gpio::PinCtl> Button<'a, G> {
     pub fn new(
         pins: &'a [(&'a G, GpioMode)],
         grant: Grant<(Option<Callback>, SubscribeMap)>,
@@ -115,7 +116,7 @@ impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Button<'a, G> {
     }
 }
 
-impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Driver for Button<'a, G> {
+impl<G: hil::gpio::Pin + hil::gpio::PinCtl> Driver for Button<'a, G> {
     /// Set callbacks.
     ///
     /// ### `subscribe_num`
@@ -125,11 +126,17 @@ impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Driver for Button<'a, G> {
     ///   interrupt will be called with two parameters: the index of the button
     ///   that triggered the interrupt and the pressed/not pressed state of the
     ///   button.
-    fn subscribe(&self, subscribe_num: usize, callback: Callback) -> ReturnCode {
+    fn subscribe(
+        &self,
+        subscribe_num: usize,
+        callback: Option<Callback>,
+        app_id: AppId,
+    ) -> ReturnCode {
         match subscribe_num {
-            0 => self.apps
-                .enter(callback.app_id(), |cntr, _| {
-                    cntr.0 = Some(callback);
+            0 => self
+                .apps
+                .enter(app_id, |cntr, _| {
+                    cntr.0 = callback;
                     ReturnCode::SUCCESS
                 })
                 .unwrap_or_else(|err| err.into()),
@@ -185,7 +192,8 @@ impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Driver for Button<'a, G> {
                 if data >= pins.len() {
                     ReturnCode::EINVAL /* impossible button */
                 } else {
-                    let res = self.apps
+                    let res = self
+                        .apps
                         .enter(appid, |cntr, _| {
                             cntr.1 &= !(1 << data);
                             ReturnCode::SUCCESS
@@ -229,7 +237,7 @@ impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Driver for Button<'a, G> {
     }
 }
 
-impl<'a, G: hil::gpio::Pin + hil::gpio::PinCtl> Client for Button<'a, G> {
+impl<G: hil::gpio::Pin + hil::gpio::PinCtl> Client for Button<'a, G> {
     fn fired(&self, pin_num: usize) {
         // Read the value of the pin and get the button state.
         let button_state = self.get_button_state(pin_num);

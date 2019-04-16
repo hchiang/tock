@@ -1,11 +1,12 @@
 //! Test the AES CCM implementation on top of AES hardware.
 
 use core::cell::Cell;
+use kernel::common::cells::TakeCell;
+use kernel::debug;
+use kernel::hil::symmetric_encryption::{CCMClient, AES128CCM, AES128_KEY_SIZE, CCM_NONCE_LENGTH};
 use kernel::ReturnCode;
-use kernel::common::take_cell::TakeCell;
-use kernel::hil::symmetric_encryption::{AES128CCM, AES128_KEY_SIZE, CCMClient, CCM_NONCE_LENGTH};
 
-pub struct Test<'a, A: AES128CCM<'a> + 'a> {
+pub struct Test<'a, A: AES128CCM<'a>> {
     aes_ccm: &'a A,
 
     buf: TakeCell<'static, [u8]>,
@@ -23,7 +24,7 @@ pub struct Test<'a, A: AES128CCM<'a> + 'a> {
     ); 3],
 }
 
-impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
+impl<A: AES128CCM<'a>> Test<'a, A> {
     pub fn new(aes_ccm: &'a A, buf: &'static mut [u8]) -> Test<'a, A> {
         Test {
             aes_ccm: aes_ccm,
@@ -84,7 +85,7 @@ impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
         let encrypting = self.encrypting.get();
 
         let buf = match self.buf.take() {
-            None => panic!("Test failed: buffer is not present."),
+            None => panic!("aes_ccm_test failed: buffer is not present."),
             Some(buf) => buf,
         };
 
@@ -99,7 +100,7 @@ impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
         if self.aes_ccm.set_key(&KEY) != ReturnCode::SUCCESS
             || self.aes_ccm.set_nonce(&nonce) != ReturnCode::SUCCESS
         {
-            panic!("Test failed: cannot set key or nonce.");
+            panic!("aes_ccm_test failed: cannot set key or nonce.");
         }
 
         let (res, opt_buf) =
@@ -120,7 +121,7 @@ impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
         let encrypting = self.encrypting.get();
 
         let buf = match self.buf.take() {
-            None => panic!("Test failed: buffer is not present."),
+            None => panic!("aes_ccm_test failed: buffer is not present."),
             Some(buf) => buf,
         };
 
@@ -135,13 +136,13 @@ impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
                 .all(|(a, b)| *a == *b);
             if a_matches && c_matches && tag_is_valid {
                 debug!(
-                    "OK! (current_test={}, encrypting={}, tag_is_valid={})",
+                    "aes_ccm_test passed: (current_test={}, encrypting={}, tag_is_valid={})",
                     self.current_test.get(),
                     self.encrypting.get(),
                     tag_is_valid
                 );
             } else {
-                debug!("Failed: a_matches={}, c_matches={}, (current_test={}, encrypting={}, tag_is_valid={}",
+                debug!("aes_ccm_test failed: a_matches={}, c_matches={}, (current_test={}, encrypting={}, tag_is_valid={}",
                        a_matches,
                        c_matches,
                        self.current_test.get(),
@@ -165,13 +166,13 @@ impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
                 .all(|(a, b)| *a == *b);
             if a_matches && m_matches && tag_is_valid {
                 debug!(
-                    "OK! (current_test={}, encrypting={}, tag_is_valid={})",
+                    "aes_ccm_test passed: (current_test={}, encrypting={}, tag_is_valid={})",
                     self.current_test.get(),
                     self.encrypting.get(),
                     tag_is_valid
                 );
             } else {
-                debug!("Failed: a_matches={}, m_matches={}, (current_test={}, encrypting={}, tag_is_valid={}",
+                debug!("aes_ccm_test failed: a_matches={}, m_matches={}, (current_test={}, encrypting={}, tag_is_valid={}",
                        a_matches,
                        m_matches,
                        self.current_test.get(),
@@ -184,11 +185,11 @@ impl<'a, A: AES128CCM<'a> + 'a> Test<'a, A> {
     }
 }
 
-impl<'a, A: AES128CCM<'a> + 'a> CCMClient for Test<'a, A> {
+impl<A: AES128CCM<'a>> CCMClient for Test<'a, A> {
     fn crypt_done(&self, buf: &'static mut [u8], res: ReturnCode, tag_is_valid: bool) {
         self.buf.replace(buf);
         if res != ReturnCode::SUCCESS {
-            debug!("Test failed: crypt_done returned {:?}", res);
+            debug!("aes_ccm_test failed: crypt_done returned {:?}", res);
         } else {
             self.check_test(tag_is_valid);
             if self.next_test() {
@@ -199,7 +200,7 @@ impl<'a, A: AES128CCM<'a> + 'a> CCMClient for Test<'a, A> {
 }
 
 static KEY: [u8; AES128_KEY_SIZE] = [
-    0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF
+    0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF,
 ];
 
 // IEEE 802.15.4-2015, Annex C.2.1.1, Secured beacon frame
@@ -218,7 +219,7 @@ static BEACON_UNSECURED: [u8; 26] = [
 
 // IEEE 802.15.4-2015, Annex C.2.1.3, Nonce for beacon frame
 static BEACON_NONCE: [u8; CCM_NONCE_LENGTH] = [
-    0xAC, 0xDE, 0x48, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x02
+    0xAC, 0xDE, 0x48, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x02,
 ];
 
 // IEEE 802.15.4-2015, Annex C.2.2.1, Secured data frame
@@ -236,7 +237,7 @@ static DATA_UNSECURED: [u8; 30] = [
 
 // IEEE 802.15.4-2015, Annex C.2.2.2, Nonce for data frame
 static DATA_NONCE: [u8; CCM_NONCE_LENGTH] = [
-    0xAC, 0xDE, 0x48, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x04
+    0xAC, 0xDE, 0x48, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x04,
 ];
 
 // IEEE 802.15.4-2015, Annex C.2.3.1, Secured MAC command frame
@@ -255,5 +256,5 @@ static MAC_UNSECURED: [u8; 30] = [
 
 // IEEE 802.15.4-2015, Annex C.2.3.2, Nonce for MAC frame
 static MAC_NONCE: [u8; CCM_NONCE_LENGTH] = [
-    0xAC, 0xDE, 0x48, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x06
+    0xAC, 0xDE, 0x48, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x06,
 ];

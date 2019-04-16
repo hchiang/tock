@@ -1,22 +1,29 @@
-//! Implementation of the AESA peripheral on the SAM4L
-//! Authors: Daniel Giffin  <daniel@beech-grove.net>
-//!          Hubert Teo <hubert.teo.hk@gmail.com>
-//!          Brad Campbell <bradjc5@gmail.com>
+//! Implementation of the AESA peripheral on the SAM4L.
+//!
+//! Authors:
+//!
+//! - Daniel Giffin  <daniel@beech-grove.net>
+//! - Hubert Teo <hubert.teo.hk@gmail.com>
+//! - Brad Campbell <bradjc5@gmail.com>
 //!
 //! Converted to new register abstraction by Philip Levis <pal@cs.stanford.edu>
 
+use crate::pm;
+use crate::scif;
 use core::cell::Cell;
-use kernel::common::regs::{ReadOnly, ReadWrite, WriteOnly};
-use kernel::common::take_cell::TakeCell;
+use kernel::common::cells::{OptionalCell, TakeCell};
+use kernel::common::peripherals::{PeripheralManagement, PeripheralManager};
+use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
+use kernel::common::StaticRef;
+use kernel::debug;
+use kernel::ClockInterface;
 use kernel::hil;
 use kernel::hil::symmetric_encryption::{AES128_BLOCK_SIZE, AES128_KEY_SIZE};
-use kernel::returncode::ReturnCode;
-use pm;
-use scif;
+use kernel::ReturnCode;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
-pub enum ConfidentialityMode {
+enum ConfidentialityMode {
     ECB = 0,
     CBC = 1,
     CFB = 2,
@@ -26,34 +33,34 @@ pub enum ConfidentialityMode {
 
 /// The registers used to interface with the hardware
 #[repr(C)]
-struct AesRegisters {
-    pub ctrl: ReadWrite<u32, Control::Register>, //   0x00
-    pub mode: ReadWrite<u32, Mode::Register>,    //   0x04
-    pub databufptr: ReadWrite<u32, DataBuf::Register>, //   0x08
-    pub sr: ReadOnly<u32, Status::Register>,     //   0x0c
-    pub ier: WriteOnly<u32, Interrupt::Register>, //   0x10
-    pub idr: WriteOnly<u32, Interrupt::Register>, //   0x14
-    pub imr: ReadOnly<u32, Interrupt::Register>, //   0x18
-    _reserved0: [u32; 1],                        //   0x1c
-    pub key0: WriteOnly<u32, Key::Register>,     //   0x20
-    pub key1: WriteOnly<u32, Key::Register>,     //   0x24
-    pub key2: WriteOnly<u32, Key::Register>,     //   0x28
-    pub key3: WriteOnly<u32, Key::Register>,     //   0x2c
-    pub key4: WriteOnly<u32, Key::Register>,     //   0x30
-    pub key5: WriteOnly<u32, Key::Register>,     //   0x34
-    pub key6: WriteOnly<u32, Key::Register>,     //   0x38
-    pub key7: WriteOnly<u32, Key::Register>,     //   0x3c
-    pub initvect0: WriteOnly<u32, InitVector::Register>, //   0x40
-    pub initvect1: WriteOnly<u32, InitVector::Register>, //   0x44
-    pub initvect2: WriteOnly<u32, InitVector::Register>, //   0x48
-    pub initvect3: WriteOnly<u32, InitVector::Register>, //   0x4c
-    pub idata: WriteOnly<u32, Data::Register>,   //   0x50
-    _reserved1: [u32; 3],                        //          0x54 - 0x5c
-    pub odata: ReadOnly<u32, Data::Register>,    //   0x60
-    _reserved2: [u32; 3],                        //          0x64 - 0x6c
-    pub drngseed: WriteOnly<u32, DrngSeed::Register>, //   0x70
-    pub parameter: ReadOnly<u32, Parameter::Register>, //   0x70
-    pub version: ReadOnly<u32, Version::Register>, //   0x70
+pub struct AesRegisters {
+    ctrl: ReadWrite<u32, Control::Register>,         //   0x00
+    mode: ReadWrite<u32, Mode::Register>,            //   0x04
+    databufptr: ReadWrite<u32, DataBuf::Register>,   //   0x08
+    sr: ReadOnly<u32, Status::Register>,             //   0x0c
+    ier: WriteOnly<u32, Interrupt::Register>,        //   0x10
+    idr: WriteOnly<u32, Interrupt::Register>,        //   0x14
+    imr: ReadOnly<u32, Interrupt::Register>,         //   0x18
+    _reserved0: [u32; 1],                            //   0x1c
+    key0: WriteOnly<u32, Key::Register>,             //   0x20
+    key1: WriteOnly<u32, Key::Register>,             //   0x24
+    key2: WriteOnly<u32, Key::Register>,             //   0x28
+    key3: WriteOnly<u32, Key::Register>,             //   0x2c
+    key4: WriteOnly<u32, Key::Register>,             //   0x30
+    key5: WriteOnly<u32, Key::Register>,             //   0x34
+    key6: WriteOnly<u32, Key::Register>,             //   0x38
+    key7: WriteOnly<u32, Key::Register>,             //   0x3c
+    initvect0: WriteOnly<u32, InitVector::Register>, //   0x40
+    initvect1: WriteOnly<u32, InitVector::Register>, //   0x44
+    initvect2: WriteOnly<u32, InitVector::Register>, //   0x48
+    initvect3: WriteOnly<u32, InitVector::Register>, //   0x4c
+    idata: WriteOnly<u32, Data::Register>,           //   0x50
+    _reserved1: [u32; 3],                            //          0x54 - 0x5c
+    odata: ReadOnly<u32, Data::Register>,            //   0x60
+    _reserved2: [u32; 3],                            //          0x64 - 0x6c
+    drngseed: WriteOnly<u32, DrngSeed::Register>,    //   0x70
+    parameter: ReadOnly<u32, Parameter::Register>,   //   0x70
+    version: ReadOnly<u32, Version::Register>,       //   0x70
 }
 
 register_bitfields![u32,
@@ -134,12 +141,13 @@ register_bitfields![u32,
 ];
 
 // Section 7.1 of datasheet
-const AES_BASE: *mut AesRegisters = 0x400B0000 as *mut AesRegisters;
+const AES_BASE: StaticRef<AesRegisters> =
+    unsafe { StaticRef::new(0x400B0000 as *const AesRegisters) };
 
 pub struct Aes<'a> {
-    registers: *mut AesRegisters,
+    registers: StaticRef<AesRegisters>,
 
-    client: Cell<Option<&'a hil::symmetric_encryption::Client<'a>>>,
+    client: OptionalCell<&'a hil::symmetric_encryption::Client<'a>>,
     source: TakeCell<'a, [u8]>,
     dest: TakeCell<'a, [u8]>,
 
@@ -154,11 +162,43 @@ pub struct Aes<'a> {
     stop_index: Cell<usize>,
 }
 
-impl<'a> Aes<'a> {
-    pub const fn new() -> Aes<'a> {
+impl PeripheralManagement<pm::Clock> for Aes<'a> {
+    type RegisterType = AesRegisters;
+
+    fn get_registers(&self) -> &AesRegisters {
+        &*AES_BASE
+    }
+
+    fn get_clock(&self) -> &pm::Clock {
+        &pm::Clock::HSB(pm::HSBClock::AESA)
+    }
+
+    fn before_peripheral_access(&self, clock: &pm::Clock, _: &AesRegisters) {
+        clock.enable();
+        scif::generic_clock_enable_divided(
+            scif::GenericClock::GCLK4,
+            scif::ClockSource::CLK_CPU,
+            1,
+        );
+        scif::generic_clock_enable(scif::GenericClock::GCLK4, scif::ClockSource::CLK_CPU);
+    }
+
+    fn after_peripheral_access(&self, clock: &pm::Clock, registers: &AesRegisters) {
+        if !registers.ctrl.is_set(Control::ENABLE) {
+            scif::generic_clock_disable(scif::GenericClock::GCLK4);
+            clock.disable();
+        }
+    }
+}
+
+type AesRegisterManager<'a> = PeripheralManager<'a, Aes<'a>, pm::Clock>;
+
+
+impl Aes<'a> {
+    const fn new() -> Aes<'a> {
         Aes {
             registers: AES_BASE,
-            client: Cell::new(None),
+            client: OptionalCell::empty(),
             source: TakeCell::empty(),
             dest: TakeCell::empty(),
             write_index: Cell::new(0),
@@ -167,69 +207,69 @@ impl<'a> Aes<'a> {
         }
     }
 
+   /* 
     fn enable_clock(&self) {
-        unsafe {
-            pm::enable_clock(pm::Clock::HSB(pm::HSBClock::AESA));
-            scif::generic_clock_enable_divided(
-                scif::GenericClock::GCLK4,
-                scif::ClockSource::CLK_CPU,
-                1,
-            );
-            scif::generic_clock_enable(scif::GenericClock::GCLK4, scif::ClockSource::CLK_CPU);
-        }
+        pm::enable_clock(pm::Clock::HSB(pm::HSBClock::AESA));
+        scif::generic_clock_enable_divided(
+            scif::GenericClock::GCLK4,
+            scif::ClockSource::CLK_CPU,
+            1,
+        );
+        scif::generic_clock_enable(scif::GenericClock::GCLK4, scif::ClockSource::CLK_CPU);
     }
-
     fn disable_clock(&self) {
-        unsafe {
-            scif::generic_clock_disable(scif::GenericClock::GCLK4);
-            pm::disable_clock(pm::Clock::HSB(pm::HSBClock::AESA));
-        }
+        scif::generic_clock_disable(scif::GenericClock::GCLK4);
+        pm::disable_clock(pm::Clock::HSB(pm::HSBClock::AESA));
     }
-
-    fn enable_interrupts(&self) {
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        regs.ier
+*/
+    fn enable_interrupts(&'a self) {
+        let aes = &AesRegisterManager::new(&self);
+        aes.registers.ier
             .write(Interrupt::IBUFRDY.val(1) + Interrupt::ODATARDY.val(1));
     }
 
-    fn disable_interrupts(&self) {
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        regs.idr
+    fn disable_interrupts(&'a self) {
+        let aes = &AesRegisterManager::new(&self);
+        aes.registers.idr
             .write(Interrupt::IBUFRDY.val(1) + Interrupt::ODATARDY.val(1));
     }
 
-    fn disable_input_interrupt(&self) {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn disable_input_interrupt(&'a self) {
+        let aes = &AesRegisterManager::new(&self);
         // Tell the AESA not to send an interrupt looking for more input
-        regs.idr.write(Interrupt::IBUFRDY.val(1));
+        aes.registers.idr.write(Interrupt::IBUFRDY.val(1));
     }
 
-    fn busy(&self) -> bool {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn busy(&'a self) -> bool {
+        let aes = &AesRegisterManager::new(&self);
         // Are any interrupts set, meaning an encryption operation
         // is in progress?
-        (regs.imr.read(Interrupt::IBUFRDY) | regs.imr.read(Interrupt::ODATARDY)) != 0
+        (aes.registers.imr.read(Interrupt::IBUFRDY) | aes.registers.imr.read(Interrupt::ODATARDY)) != 0
     }
 
-    fn set_mode(&self, encrypting: bool, mode: ConfidentialityMode) {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn set_mode(&'a self, encrypting: bool, mode: ConfidentialityMode) {
+        let aes = &AesRegisterManager::new(&self);
         let encrypt = if encrypting { 1 } else { 0 };
         let dma = 0;
-        regs.mode.write(
-            Mode::ENCRYPT.val(encrypt) + Mode::DMA.val(dma) + Mode::OPMODE.val(mode as u32)
-                + Mode::CTYPE4.val(1) + Mode::CTYPE3.val(1) + Mode::CTYPE2.val(1)
+        aes.registers.mode.write(
+            Mode::ENCRYPT.val(encrypt)
+                + Mode::DMA.val(dma)
+                + Mode::OPMODE.val(mode as u32)
+                + Mode::CTYPE4.val(1)
+                + Mode::CTYPE3.val(1)
+                + Mode::CTYPE2.val(1)
                 + Mode::CTYPE1.val(1),
         );
     }
 
-    fn input_buffer_ready(&self) -> bool {
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        regs.sr.read(Status::IBUFRDY) != 0
+    fn input_buffer_ready(&'a self) -> bool {
+        let aes = &AesRegisterManager::new(&self);
+        aes.registers.sr.read(Status::IBUFRDY) != 0
     }
 
-    fn output_data_ready(&self) -> bool {
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        regs.sr.read(Status::ODATARDY) != 0
+    fn output_data_ready(&'a self) -> bool {
+        let aes = &AesRegisterManager::new(&self);
+        aes.registers.sr.read(Status::ODATARDY) != 0
     }
 
     fn try_set_indices(&self, start_index: usize, stop_index: usize) -> bool {
@@ -272,8 +312,8 @@ impl<'a> Aes<'a> {
     // Copy a block from the request buffer to the AESA input register,
     // if there is a block left in the buffer.  Either way, this function
     // returns true if more blocks remain to send.
-    fn write_block(&self) -> bool {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn write_block(&'a self) -> bool {
+        let aes = &AesRegisterManager::new(&self);
         self.source.map_or_else(
             || {
                 // The source and destination are the same buffer
@@ -293,7 +333,7 @@ impl<'a> Aes<'a> {
                             v |= (dest[index + (i * 4) + 1] as usize) << 8;
                             v |= (dest[index + (i * 4) + 2] as usize) << 16;
                             v |= (dest[index + (i * 4) + 3] as usize) << 24;
-                            regs.idata.set(v as u32);
+                            aes.registers.idata.set(v as u32);
                         }
                         self.write_index.set(index + AES128_BLOCK_SIZE);
 
@@ -316,7 +356,7 @@ impl<'a> Aes<'a> {
                     v |= (source[index + (i * 4) + 1] as usize) << 8;
                     v |= (source[index + (i * 4) + 2] as usize) << 16;
                     v |= (source[index + (i * 4) + 3] as usize) << 24;
-                    regs.idata.set(v as u32);
+                    aes.registers.idata.set(v as u32);
                 }
 
                 self.write_index.set(index + AES128_BLOCK_SIZE);
@@ -330,8 +370,8 @@ impl<'a> Aes<'a> {
     // Copy a block from the AESA output register back into the request buffer
     // if there is any room left.  Return true if we are still waiting for more
     // blocks after this
-    fn read_block(&self) -> bool {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn read_block(&'a self) -> bool {
+        let aes = &AesRegisterManager::new(&self);
         self.dest.map_or_else(
             || {
                 debug!("Called read_block() with no data");
@@ -345,7 +385,7 @@ impl<'a> Aes<'a> {
                 }
 
                 for i in 0..4 {
-                    let v = regs.odata.get();
+                    let v = aes.registers.odata.get();
                     dest[index + (i * 4) + 0] = (v >> 0) as u8;
                     dest[index + (i * 4) + 1] = (v >> 8) as u8;
                     dest[index + (i * 4) + 2] = (v >> 16) as u8;
@@ -363,7 +403,7 @@ impl<'a> Aes<'a> {
     /// Handle an interrupt, which will indicate either that the AESA's input
     /// buffer is ready for more data, or that it has completed a block of output
     /// for us to consume
-    pub fn handle_interrupt(&self) {
+    pub fn handle_interrupt(&'a self) {
         if !self.busy() {
             // Ignore errant interrupts, in case it's possible for the AES interrupt flag
             // to be set again while we are in this handler.
@@ -389,47 +429,47 @@ impl<'a> Aes<'a> {
                 self.disable_interrupts();
 
                 // Alert the client of the completion
-                if let Some(client) = self.client.get() {
+                self.client.map(|client| {
                     client.crypt_done(self.source.take(), self.dest.take().unwrap());
-                }
+                });
             }
         }
     }
 }
 
-impl<'a> hil::symmetric_encryption::AES128<'a> for Aes<'a> {
-    fn enable(&self) {
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        self.enable_clock();
-        regs.ctrl.write(Control::ENABLE.val(1));
+impl hil::symmetric_encryption::AES128<'a> for Aes<'a> {
+    fn enable(&'a self) {
+        let aes = &AesRegisterManager::new(&self);
+        //self.enable_clock();
+        aes.registers.ctrl.write(Control::ENABLE.val(1));
     }
 
-    fn disable(&self) {
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        regs.ctrl.set(0);
-        self.disable_clock();
+    fn disable(&'a self) {
+        let aes = &AesRegisterManager::new(&self);
+        aes.registers.ctrl.set(0);
+        //self.disable_clock();
     }
 
     fn set_client(&'a self, client: &'a hil::symmetric_encryption::Client<'a>) {
-        self.client.set(Some(client));
+        self.client.set(client);
     }
 
-    fn set_key(&self, key: &[u8]) -> ReturnCode {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn set_key(&'a self, key: &[u8]) -> ReturnCode {
         if key.len() != AES128_KEY_SIZE {
             return ReturnCode::EINVAL;
         }
 
+        let aes = &AesRegisterManager::new(&self);
         for i in 0..4 {
             let mut k = key[i * 4 + 0] as usize;
             k |= (key[i * 4 + 1] as usize) << 8;
             k |= (key[i * 4 + 2] as usize) << 16;
             k |= (key[i * 4 + 3] as usize) << 24;
             match i {
-                0 => regs.key0.set(k as u32),
-                1 => regs.key1.set(k as u32),
-                2 => regs.key2.set(k as u32),
-                3 => regs.key3.set(k as u32),
+                0 => aes.registers.key0.set(k as u32),
+                1 => aes.registers.key1.set(k as u32),
+                2 => aes.registers.key2.set(k as u32),
+                3 => aes.registers.key3.set(k as u32),
                 _ => {}
             }
         }
@@ -437,12 +477,12 @@ impl<'a> hil::symmetric_encryption::AES128<'a> for Aes<'a> {
         ReturnCode::SUCCESS
     }
 
-    fn set_iv(&self, iv: &[u8]) -> ReturnCode {
-        let regs: &AesRegisters = unsafe { &*self.registers };
+    fn set_iv(&'a self, iv: &[u8]) -> ReturnCode {
         if iv.len() != AES128_BLOCK_SIZE {
             return ReturnCode::EINVAL;
         }
 
+        let aes = &AesRegisterManager::new(&self);
         // Set the initial value from the array.
         for i in 0..4 {
             let mut c = iv[i * 4 + 0] as usize;
@@ -450,10 +490,10 @@ impl<'a> hil::symmetric_encryption::AES128<'a> for Aes<'a> {
             c |= (iv[i * 4 + 2] as usize) << 16;
             c |= (iv[i * 4 + 3] as usize) << 24;
             match i {
-                0 => regs.initvect0.set(c as u32),
-                1 => regs.initvect1.set(c as u32),
-                2 => regs.initvect2.set(c as u32),
-                3 => regs.initvect3.set(c as u32),
+                0 => aes.registers.initvect0.set(c as u32),
+                1 => aes.registers.initvect1.set(c as u32),
+                2 => aes.registers.initvect2.set(c as u32),
+                3 => aes.registers.initvect3.set(c as u32),
                 _ => {}
             }
         }
@@ -461,12 +501,12 @@ impl<'a> hil::symmetric_encryption::AES128<'a> for Aes<'a> {
         ReturnCode::SUCCESS
     }
 
-    fn start_message(&self) {
+    fn start_message(&'a self) {
         if self.busy() {
             return;
         }
-        let regs: &AesRegisters = unsafe { &*self.registers };
-        regs.ctrl
+        let aes = &AesRegisterManager::new(&self);
+        aes.registers.ctrl
             .write(Control::NEWMSG.val(1) + Control::ENABLE.val(1));
     }
 
@@ -496,14 +536,14 @@ impl<'a> hil::symmetric_encryption::AES128<'a> for Aes<'a> {
     }
 }
 
-impl<'a> hil::symmetric_encryption::AES128Ctr for Aes<'a> {
-    fn set_mode_aes128ctr(&self, encrypting: bool) {
+impl hil::symmetric_encryption::AES128Ctr<'a> for Aes<'a> {
+    fn set_mode_aes128ctr(&'a self, encrypting: bool) {
         self.set_mode(encrypting, ConfidentialityMode::CTR);
     }
 }
 
-impl<'a> hil::symmetric_encryption::AES128CBC for Aes<'a> {
-    fn set_mode_aes128cbc(&self, encrypting: bool) {
+impl hil::symmetric_encryption::AES128CBC<'a> for Aes<'a> {
+    fn set_mode_aes128cbc(&'a self, encrypting: bool) {
         self.set_mode(encrypting, ConfidentialityMode::CBC);
     }
 }

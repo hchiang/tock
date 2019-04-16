@@ -1,5 +1,5 @@
 use kernel::hil::clock_pm::{SetClock};
-use pm;
+use crate::pm;
 
 pub struct ImixClockManager{
 }

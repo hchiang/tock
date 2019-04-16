@@ -1,10 +1,9 @@
 //! A dummy SPI client to test the SPI implementation
 
-use kernel::ReturnCode;
 use kernel::hil::gpio;
 use kernel::hil::gpio::Pin;
 use kernel::hil::spi::{self, SpiMaster};
-use sam4l;
+use kernel::ReturnCode;
 
 #[allow(unused_variables, dead_code)]
 pub struct DummyCB {
@@ -68,7 +67,6 @@ pub unsafe fn spi_dummy_test() {
     sam4l::spi::SPI.set_active_peripheral(sam4l::spi::Peripheral::Peripheral0);
     sam4l::spi::SPI.set_client(&SPICB);
     sam4l::spi::SPI.init();
-    sam4l::spi::SPI.enable();
     sam4l::spi::SPI.set_baud_rate(200000);
 
     let len = BUF2.len();
