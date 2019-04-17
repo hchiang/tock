@@ -120,7 +120,7 @@ struct Imix {
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, sam4l::gpio::GPIOPin>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
-    //clock_driver: &'static capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
+    clock_driver: &'static capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
     //temp: &'static capsules::temperature::TemperatureSensor<'static>,
     //humidity: &'static capsules::humidity::HumiditySensor<'static>,
     //ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
@@ -272,8 +272,8 @@ unsafe fn set_pin_primary_functions() {
 pub unsafe fn reset_handler() {
     sam4l::init();
 
-    //let clock_driver = static_init!(capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
-    //                                capsules::clock_pm::ClockCM::new(sam4l::clock_pm::ImixClockManager::new()));
+    let clock_driver = static_init!(capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
+                                    capsules::clock_pm::ClockCM::new(sam4l::clock_pm::ImixClockManager::new()));
 
     sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
         frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
