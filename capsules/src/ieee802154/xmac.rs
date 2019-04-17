@@ -98,7 +98,7 @@ const SLEEP_TIME_MS: u32 = 2000;
 // Time the radio will continue to send preamble packets before aborting the
 // transmission and returning ENOACK. Should be at least as large as the maximum
 // sleep time for any node in the network.
-const PREAMBLE_TX_MS: u32 = 251;
+const PREAMBLE_TX_MS: u32 = 10;
 
 // Maximum backoff for a transmitter attempting to send a data packet, when the
 // node has detected a data packet sent to the same destination from another
@@ -531,14 +531,14 @@ impl<R: radio::Radio, A: Alarm> radio::TxClient for XMac<'a, R, A> {
             // Completed a preamble transmission
             XMacState::TX_PREAMBLE => {
                 self.tx_preamble_buf.replace(buf);
-                //if acked {
+                if acked {
                     // Destination signals ready to receive data
                     self.state.set(XMacState::TX);
                     self.transmit_packet();
-                //} else {
-                //    // Continue resending preambles
-                //    self.transmit_preamble();
-                //}
+                } else {
+                    // Continue resending preambles
+                    self.transmit_preamble();
+                }
             }
             XMacState::TX_DELAY | XMacState::SLEEP => {
                 // If, while sending preambles, we switch to TX_DELAY mode, the
