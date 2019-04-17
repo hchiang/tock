@@ -531,14 +531,14 @@ impl<R: radio::Radio, A: Alarm> radio::TxClient for XMac<'a, R, A> {
             // Completed a preamble transmission
             XMacState::TX_PREAMBLE => {
                 self.tx_preamble_buf.replace(buf);
-                if acked {
+                //if acked {
                     // Destination signals ready to receive data
                     self.state.set(XMacState::TX);
                     self.transmit_packet();
-                } else {
-                    // Continue resending preambles
-                    self.transmit_preamble();
-                }
+                //} else {
+                //    // Continue resending preambles
+                //    self.transmit_preamble();
+                //}
             }
             XMacState::TX_DELAY | XMacState::SLEEP => {
                 // If, while sending preambles, we switch to TX_DELAY mode, the
