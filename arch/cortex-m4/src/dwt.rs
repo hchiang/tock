@@ -30,3 +30,11 @@ pub unsafe fn stop_timer() {
 pub unsafe fn get_time() -> u32 {
     DWT.cycnt.get()
 }
+
+pub unsafe fn bench<F: FnOnce()>(f: F) -> u32 {
+    reset_timer();
+    start_timer();
+    f();
+    stop_timer();
+    get_time()
+}

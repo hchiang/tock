@@ -471,6 +471,20 @@ pub unsafe fn reset_handler() {
     // aes_test::run_aes128_ctr();
     // aes_test::run_aes128_cbc();
 
+    let client_idx = sam4l::clock_pm::CM.register(&Dummy).unwrap();
+    let cycles = cortexm4::dwt::bench(|| {
+        sam4l::clock_pm::CM.enable_clock(client_idx);
+    });
+    debug!("enable_clock: {}", cycles);
+    let cycles = cortexm4::dwt::bench(|| {
+        sam4l::clock_pm::CM.disable_clock(client_idx);
+    });
+    debug!("disable_clock: {}", cycles);
+
+    let cycles = cortexm4::dwt::bench(|| {
+    });
+    debug!("nop bench: {}", cycles);
+
     debug!("Initialization complete. Entering main loop");
 
     extern "C" {
@@ -488,4 +502,10 @@ pub unsafe fn reset_handler() {
     );
 
     board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap);
+}
+
+struct Dummy;
+impl kernel::hil::clock_pm::ClockClient for Dummy {
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
 }
