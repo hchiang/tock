@@ -1231,18 +1231,20 @@ impl<S: spi::SpiMasterDevice> radio::RadioConfig for RF233<'a, S> {
             return ReturnCode::EALREADY;
         }
 
-        match self.state.get() {
-            InternalState::READY | InternalState::ON_PLL_WAITING => {
-                self.radio_on.set(false);
-                self.state_transition_write(
-                    RF233Register::TRX_STATE,
-                    RF233TrxCmd::OFF as u8,
-                    InternalState::SLEEP_TRX_OFF,
-                );
-            }
-            _ => {
-                self.sleep_pending.set(true);
-            }
+        let state = self.state.get();
+        let busy = self.spi_busy.get();
+        // We can transition immediately
+        if (state == InternalState::READY || state == InternalState::ON_PLL_WAITING) && !busy {
+            self.radio_on.set(false);
+            self.state_transition_write(
+                RF233Register::TRX_STATE,
+                RF233TrxCmd::OFF as u8,
+                InternalState::SLEEP_TRX_OFF,
+            );
+        }
+        // Wait for SPI callback in correct state to transition
+        else {
+            self.sleep_pending.set(true);
         }
 
         ReturnCode::SUCCESS
