@@ -99,7 +99,7 @@ const SLEEP_TIME_MS: u32 = 5000;
 // Time the radio will continue to send preamble packets before aborting the
 // transmission and returning ENOACK. Should be at least as large as the maximum
 // sleep time for any node in the network.
-const PREAMBLE_TX_MS: u32 = 50;
+const PREAMBLE_TX_MS: u32 = 150;
 
 // Maximum backoff for a transmitter attempting to send a data packet, when the
 // node has detected a data packet sent to the same destination from another
