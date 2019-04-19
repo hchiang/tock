@@ -84,6 +84,7 @@ use kernel::hil::radio;
 use kernel::hil::rng::{self, Rng};
 use kernel::hil::time::{self, Alarm, Frequency, Time};
 use kernel::ReturnCode;
+use kernel::debug;
 
 // Time the radio will remain awake listening for packets before sleeping.
 // Observing the RF233, receive callbacks for preambles are generated only after
@@ -442,9 +443,9 @@ impl<R: radio::Radio, A: Alarm> Mac for XMac<'a, R, A> {
 
         // If the radio is on, start the preamble timer and start transmitting
         if self.radio.is_on() {
-            self.state.set(XMacState::TX_PREAMBLE);
-            self.set_timer_ms::<A>(PREAMBLE_TX_MS);
-            self.transmit_preamble();
+            self.state.set(XMacState::TX);
+            //self.set_timer_ms::<A>(PREAMBLE_TX_MS);
+            self.transmit_packet();
 
         // If the radio is currently sleeping, wake it and indicate that when
         // ready, it should begin transmitting preambles
@@ -495,10 +496,6 @@ impl<R: radio::Radio, A: Alarm> time::Client for XMac<'a, R, A> {
                 self.state.set(XMacState::TX);
                 self.transmit_packet();
             }
-            XMacState::TX=> {
-                self.call_tx_client(self.tx_payload.take().unwrap(), false, ReturnCode::SUCCESS);
-
-            }
             _ => {}
         }
     }
@@ -514,7 +511,7 @@ impl<R: radio::Radio, A: Alarm> radio::PowerClient for XMac<'a, R, A> {
                 if self.tx_preamble_pending.get() {
                     self.tx_preamble_pending.set(false);
                     self.state.set(XMacState::TX);
-                    self.set_timer_ms::<A>(PREAMBLE_TX_MS);
+                    //self.set_timer_ms::<A>(PREAMBLE_TX_MS);
                     self.transmit_packet();
                 } else {
                     self.state.set(XMacState::AWAKE);
@@ -530,8 +527,7 @@ impl<R: radio::Radio, A: Alarm> radio::TxClient for XMac<'a, R, A> {
         match self.state.get() {
             // Completed a data transmission to the destination node
             XMacState::TX => {
-                //self.call_tx_client(buf, acked, result);
-                self.tx_payload.replace(buf);
+                self.call_tx_client(buf, acked, result);
             }
             // Completed a preamble transmission
             XMacState::TX_PREAMBLE => {

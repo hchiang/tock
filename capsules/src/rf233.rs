@@ -471,6 +471,7 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                     );
                 }
             }
+            // Called when radio turned on
             InternalState::START_TURNING_OFF => {
                 self.irq_pin.make_input();
                 self.irq_pin.clear();
@@ -682,6 +683,7 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                     self.power_client.map(|p| {
                         p.changed(self.radio_on.get());
                     });
+                    // TODO: disable gpio interrupt
                     self.irq_pin.disable_interrupt();
                 }
             }
@@ -692,7 +694,9 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                 // Toggle the sleep pin to take the radio out of sleep mode into
                 // InternalState::TRX_OFF, then transition directly to RX_AACK_ON.
                 self.sleep_pin.clear();
-                self.irq_pin.enable_interrupt(INTERRUPT_ID, gpio::InterruptMode::RisingEdge);
+                // TODO: Re-enable interrupt
+                self.irq_pin
+                    .enable_interrupt(INTERRUPT_ID, gpio::InterruptMode::RisingEdge);
                 self.state_transition_write(
                     RF233Register::TRX_STATE,
                     RF233TrxCmd::RX_AACK_ON as u8,
@@ -1227,18 +1231,20 @@ impl<S: spi::SpiMasterDevice> radio::RadioConfig for RF233<'a, S> {
             return ReturnCode::EALREADY;
         }
 
-        match self.state.get() {
-            InternalState::READY | InternalState::ON_PLL_WAITING => {
-                self.radio_on.set(false);
-                self.state_transition_write(
-                    RF233Register::TRX_STATE,
-                    RF233TrxCmd::OFF as u8,
-                    InternalState::SLEEP_TRX_OFF,
-                );
-            }
-            _ => {
-                self.sleep_pending.set(true);
-            }
+        let state = self.state.get();
+        let busy = self.spi_busy.get();
+        // We can transition immediately
+        if (state == InternalState::READY || state == InternalState::ON_PLL_WAITING) && !busy {
+            self.radio_on.set(false);
+            self.state_transition_write(
+                RF233Register::TRX_STATE,
+                RF233TrxCmd::OFF as u8,
+                InternalState::SLEEP_TRX_OFF,
+            );
+        }
+        // Wait for SPI callback in correct state to transition
+        else {
+            self.sleep_pending.set(true);
         }
 
         ReturnCode::SUCCESS
