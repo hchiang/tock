@@ -267,16 +267,6 @@ impl ImixClockManager {
         self.current_clock.set(clock);
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
-            /*
-            debug_gpio!(0, clear);
-            debug_gpio!(1, clear);
-            debug_gpio!(2, clear);
-            match system_clock {
-                pm::SystemClockSource::RC1M => debug_gpio!(0, set),
-                pm::SystemClockSource::RC80M => debug_gpio!(1, set),
-                _ => debug_gpio!(2, set),
-            }
-            */
             unsafe {
                 pm::PM.change_system_clock(system_clock);
             }
@@ -359,16 +349,22 @@ impl ClockManager for ImixClockManager {
         }
         // The current clock is compatible and client doesn't need a lock
         else if !self.clients[client_index].get_need_lock() {
-            let nolock_clockmask = self.nolock_clockmask.get() & client_clocks;
-
-            // The next clock that will be changed to is also compatible
-            if nolock_clockmask & self.change_clockmask.get() != 0 {
-                self.nolock_clockmask.set(nolock_clockmask);
-                self.clients[client_index].set_running(true);
-                self.clients[client_index].client_enabled();
-            }
+            //TODO change clock if client is the only one running
+            let mut nolock_clockmask = self.nolock_clockmask.get();
+            if self.lock_count.get() == 0 && self.nolock_clockmask.get() == ALLCLOCKS {
+                self.update_clock(); 
+            } 
             else {
-                self.change_clock.set(true);
+                nolock_clockmask &= client_clocks;
+                // The next clock that will be changed to is also compatible
+                if nolock_clockmask & self.change_clockmask.get() != 0 {
+                    self.nolock_clockmask.set(nolock_clockmask);
+                    self.clients[client_index].set_running(true);
+                    self.clients[client_index].client_enabled();
+                }
+                else {
+                    self.change_clock.set(true);
+                }
             }
         }
         // The current clock is compatible and there is no pending clock change
