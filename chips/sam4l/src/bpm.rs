@@ -181,6 +181,13 @@ unsafe fn power_scaling_ok() -> bool {
     BPM.sr.is_set(Status::PSOK)
 }
 
+pub unsafe fn set_sleep_mode(sleep_mode: u32) {
+    let control = BPM.pmcon.extract();
+    unlock_register(0x1c); // Control
+    BPM.pmcon
+        .modify_no_read(control, PowerModeControl::SLEEP.val(sleep_mode));
+}
+
 // This approach based on `bpm_power_scaling_cpu` from ASF
 pub unsafe fn set_power_scaling(ps_value: PowerScaling) {
     // The datasheet says to spin on this before doing anything, ASF

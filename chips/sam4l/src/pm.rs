@@ -10,7 +10,6 @@ use core::sync::atomic::Ordering;
 use kernel::common::registers::{register_bitfields, FieldValue, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::ClockInterface;
-use kernel::debug_gpio;
 
 /// §10.7 PM::UserInterface from SAM4L Datasheet.
 #[repr(C)]
@@ -620,19 +619,6 @@ impl PowerManager {
                 frequency,
                 startup_mode,
             } => {
-                //match self.system_clock_source.get() {
-                    // If the PLL is running (it uses OSC0 as a reference clock),
-                    // temporarily change the system clock to RCSYS to avoid buggy behavior
-                    //SystemClockSource::PllExternalOscillatorAt48MHz { .. } => {
-                    //    select_main_clock(MainClock::RCSYS);
-                    //}
-                    // Some peripherals (uart,spi) show buggy behavior if the system clock
-                    // is directly switched from OSC0 to DFLL - no explanation in documentation
-                    //SystemClockSource::DfllRc32kAt48MHz => {
-                    //    select_main_clock(MainClock::RCSYS);
-                    //}
-                //    _ => {}
-                //}
                 // Configure and turn on OSC0
                 configure_external_oscillator(frequency, startup_mode);
                 // Change the system clock to OSC0
@@ -681,15 +667,6 @@ impl PowerManager {
                     scif::disable_rcfast();
                 }
 
-                // Some peripherals (uart,spi) show buggy behavior if the system clock
-                // is directly switched from RCFAST to DFLL - no explanation in documentation
-                //match self.system_clock_source.get() {
-                //    SystemClockSource::DfllRc32kAt48MHz => {
-                //        select_main_clock(MainClock::RCSYS);
-                //    }
-                //    _ => {}
-                //}
-
                 // Configure and turn on RCFAST at specified frequency
                 configure_rcfast(frequency);
                 // Change the system clock to RCFAST
@@ -699,13 +676,6 @@ impl PowerManager {
             }
 
             SystemClockSource::RC1M => {
-                //match self.system_clock_source.get() {
-                //    SystemClockSource::DfllRc32kAt48MHz => {
-                //        select_main_clock(MainClock::RCSYS);
-                //    }
-                //    _ => {}
-                //}
-
                 // Configure and turn on RC1M
                 configure_1mhz_rc();
                 // Change the system clock to RC1M
@@ -1120,6 +1090,26 @@ pub fn deep_sleep_ready() -> bool {
     let pba = PM_REGS.pbamask.get() & !deep_sleep_pbamask.mask() == 0;
     let pbb = PM_REGS.pbbmask.get() & !deep_sleep_pbbmask.mask() == 0;
     let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) == 0;
+
+    unsafe {
+        if hsb && pba && pbb {
+            match PM.system_clock_source.get() {
+                SystemClockSource::RcsysAt115kHz => {
+                    bpm::set_sleep_mode(3);
+                }
+                _ => {
+                    bpm::set_sleep_mode(2);
+                }
+            }
+        } 
+        else if hsb {
+            bpm::set_sleep_mode(1);
+        }
+        else {
+            bpm::set_sleep_mode(0);
+        }
+    }
+
     hsb && pba && pbb && gpio
 }
 
