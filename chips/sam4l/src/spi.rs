@@ -622,6 +622,7 @@ impl spi::SpiMaster for SpiHw {
             }
             }
         }
+
         self.client_index.map( |client_index|
             unsafe {
             clock_pm::CM.enable_clock(client_index)
@@ -744,7 +745,6 @@ impl DMAClient for SpiHw {
             .set(self.transfers_in_progress.get() - 1);
 
         if self.transfers_in_progress.get() == 0 {
-            self.disable();
             let txbuf = self.dma_write.map_or(None, |dma| {
                 let buf = dma.abort_transfer();
                 dma.disable();
@@ -773,6 +773,12 @@ impl DMAClient for SpiHw {
                         cb.read_write_done(txbuf, rxbuf, len);
                     });
                 }
+            }
+            // Callbacks did not request another operation
+            if self.transfers_in_progress.get() == 0 {
+                //if //disabled {
+                self.disable();
+                //}
             }
         }
     }

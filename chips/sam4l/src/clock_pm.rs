@@ -4,6 +4,7 @@ use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
 use crate::pm;
 use kernel::debug;
+use kernel::debug_gpio;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
@@ -266,6 +267,16 @@ impl ImixClockManager {
         self.current_clock.set(clock);
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
+            /*
+            debug_gpio!(0, clear);
+            debug_gpio!(1, clear);
+            debug_gpio!(2, clear);
+            match system_clock {
+                pm::SystemClockSource::RC1M => debug_gpio!(0, set),
+                pm::SystemClockSource::RC80M => debug_gpio!(1, set),
+                _ => debug_gpio!(2, set),
+            }
+            */
             unsafe {
                 pm::PM.change_system_clock(system_clock);
             }
@@ -326,6 +337,7 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         if self.clients[client_index].get_enabled() {
+            self.clients[client_index].client_enabled();
             return Ok(pm::get_system_frequency());
         }
 
