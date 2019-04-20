@@ -1193,7 +1193,7 @@ impl<S: spi::SpiMasterDevice> radio::RadioConfig for RF233<'a, S> {
         self.spi.configure(
             spi::ClockPolarity::IdleLow,
             spi::ClockPhase::SampleLeading,
-            100000,
+            2000000,
         );
         self.reset_pin.make_output();
         self.sleep_pin.make_output();
