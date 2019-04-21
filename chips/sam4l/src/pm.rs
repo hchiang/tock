@@ -1121,26 +1121,6 @@ pub fn deep_sleep_ready() -> bool {
     let pba = PM_REGS.pbamask.get() & !deep_sleep_pbamask.mask() == 0;
     let pbb = PM_REGS.pbbmask.get() & !deep_sleep_pbbmask.mask() == 0;
     let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) == 0;
-
-    unsafe {
-        if hsb && pba && pbb {
-            match PM.system_clock_source.get() {
-                SystemClockSource::RcsysAt115kHz => {
-                    bpm::set_sleep_mode(3);
-                }
-                _ => {
-                    bpm::set_sleep_mode(2);
-                }
-            }
-        } 
-        else if hsb {
-            bpm::set_sleep_mode(1);
-        }
-        else {
-            bpm::set_sleep_mode(0);
-        }
-    }
-
     hsb && pba && pbb && gpio
 }
 
