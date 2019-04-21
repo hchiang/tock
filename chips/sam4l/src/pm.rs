@@ -1133,6 +1133,9 @@ pub fn deep_sleep_ready() -> bool {
                 }
             }
         } 
+        else if hsb {
+            bpm::set_sleep_mode(1);
+        }
         else {
             bpm::set_sleep_mode(0);
         }
