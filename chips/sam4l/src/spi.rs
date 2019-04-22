@@ -10,6 +10,8 @@ use crate::dma::DMAChannel;
 use crate::dma::DMAClient;
 use crate::dma::DMAPeripheral;
 use crate::pm::{self, SystemClockSource, RcfastFrequency};
+use crate::gpio;
+use core::sync::atomic::Ordering;
 use core::cell::Cell;
 use core::cmp;
 use kernel::common::cells::OptionalCell;
@@ -286,7 +288,12 @@ impl SpiHw {
             spi.registers.idr.write(InterruptFlags::NSSR::SET);; // Disable NSSR
         }
         unsafe {
-            pm::PM.change_system_clock(SystemClockSource::RC80M);
+            let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) != 0;
+            if gpio { // For this app, we are waiting on interrupt from radio
+                pm::PM.change_system_clock(SystemClockSource::RC1M);
+            } else {
+                pm::PM.change_system_clock(SystemClockSource::RC80M);
+            }
         }
     }
 
