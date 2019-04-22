@@ -9,7 +9,7 @@
 use crate::dma::DMAChannel;
 use crate::dma::DMAClient;
 use crate::dma::DMAPeripheral;
-use crate::pm;
+use crate::pm::{self, SystemClockSource, RcfastFrequency};
 use core::cell::Cell;
 use core::cmp;
 use kernel::common::cells::OptionalCell;
@@ -284,6 +284,9 @@ impl SpiHw {
 
         if self.role.get() == SpiRole::SpiSlave {
             spi.registers.idr.write(InterruptFlags::NSSR::SET);; // Disable NSSR
+        }
+        unsafe {
+            pm::PM.change_system_clock(SystemClockSource::RC80M);
         }
     }
 
@@ -576,6 +579,9 @@ impl spi::SpiMaster for SpiHw {
             return ReturnCode::EBUSY;
         }
 
+        unsafe {
+            pm::PM.change_system_clock(SystemClockSource::RCFAST { frequency: RcfastFrequency::Frequency4MHz});
+        }
         self.read_write_bytes(Some(write_buffer), read_buffer, len)
     }
 
@@ -707,8 +713,6 @@ impl DMAClient for SpiHw {
 
             let len = self.dma_length.get();
             self.dma_length.set(0);
-
-            self.disable();
 
             match self.role.get() {
                 SpiRole::SpiMaster => {

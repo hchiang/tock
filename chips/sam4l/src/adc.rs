@@ -17,7 +17,7 @@
 //! - Updated: May 1, 2017
 
 use crate::dma;
-use crate::pm::{self, Clock, PBAClock};
+use crate::pm::{self, Clock, PBAClock, SystemClockSource, RcfastFrequency};
 use crate::scif;
 use core::cell::Cell;
 use core::{cmp, mem, slice};
@@ -817,6 +817,10 @@ impl hil::adc::Adc for Adc{
 
             self.disable();
 
+            unsafe {
+                pm::PM.change_system_clock(SystemClockSource::RC80M);
+            }
+
             // stop DMA transfer if going. This should safely return a None if
             // the DMA was not being used
             let dma_buffer = self.rx_dma.map_or(None, |rx_dma| {
@@ -883,6 +887,10 @@ impl hil::adc::AdcHighSpeed for Adc {
         Option<&'static mut [u16]>,
     ) {
         let regs: &AdcRegisters = &*self.registers;
+
+        unsafe {
+            pm::PM.change_system_clock(SystemClockSource::RCFAST { frequency: RcfastFrequency::Frequency4MHz});
+        }
 
         let res = self.config_and_enable(frequency);
 

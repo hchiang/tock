@@ -1,4 +1,5 @@
 use kernel::hil::clock_pm::{SetClock};
+use kernel::debug_gpio;
 use crate::pm;
 
 pub struct ImixClockManager{

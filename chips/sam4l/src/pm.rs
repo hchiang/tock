@@ -10,6 +10,7 @@ use core::sync::atomic::Ordering;
 use kernel::common::registers::{register_bitfields, FieldValue, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::ClockInterface;
+use kernel::debug_gpio;
 
 /// §10.7 PM::UserInterface from SAM4L Datasheet.
 #[repr(C)]
