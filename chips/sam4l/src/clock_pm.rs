@@ -58,7 +58,7 @@ impl ClockData {
             need_lock: Cell::new(true),
             running: Cell::new(false),
             clockmask: Cell::new(ALLCLOCKS),
-            clocklist: Cell::new(ALLCLOCKS),
+            clocklist: Cell::new(0),
             min_freq: Cell::new(0),
             max_freq: Cell::new(48000000),
         }
@@ -299,11 +299,15 @@ impl ImixClockManager {
     }
 
     fn update_clockmask(&self, client_index: usize) {
-        self.clients[client_index].set_clockmask(
-            self.clients[client_index].get_clocklist() & 
-            (0x1 | self.freq_clockmask(
-                self.clients[client_index].get_min_freq(),
-                self.clients[client_index].get_max_freq())));
+        let clocklist = self.clients[client_index].get_clocklist();
+        let freq_clockmask = self.freq_clockmask(
+                    self.clients[client_index].get_min_freq(),
+                    self.clients[client_index].get_max_freq());
+        if clocklist == 0 {
+            self.clients[client_index].set_clockmask(freq_clockmask);
+        } else {
+            self.clients[client_index].set_clockmask(clocklist & (freq_clockmask | 0x1));
+        }
     }
 }
 
@@ -356,6 +360,7 @@ impl ClockManager for ImixClockManager {
             } 
             else {
                 nolock_clockmask &= client_clocks;
+r 
                 // The next clock that will be changed to is also compatible
                 if nolock_clockmask & self.change_clockmask.get() != 0 {
                     self.nolock_clockmask.set(nolock_clockmask);
@@ -402,6 +407,7 @@ impl ClockManager for ImixClockManager {
             }
             self.nolock_clockmask.set(new_clockmask);
         }
+        //TODO this line basically does nothing right now 
         self.clients[client_index].client_disabled();
         // Automatically calls update_clock if there are no locks
         if self.lock_count.get() == 0 {
