@@ -20,6 +20,9 @@ const PLL: u32          = 0x100;
 const RC80M: u32        = 0x200;
 const ALLCLOCKS: u32    = 0x3ff;
 
+const IO_MODE: u32      = 0x0;
+const CPU_MODE: u32     = 0x1;
+
 pub struct ImixClientIndex {
     client_index: usize,
 }
@@ -45,6 +48,7 @@ struct ClockData {
     running: Cell<bool>,
     clockmask: Cell<u32>,
     clocklist: Cell<u32>,
+    mode: Cell<u32>,
     min_freq: Cell<u32>,
     max_freq: Cell<u32>,
 }
@@ -58,7 +62,8 @@ impl ClockData {
             need_lock: Cell::new(true),
             running: Cell::new(false),
             clockmask: Cell::new(ALLCLOCKS),
-            clocklist: Cell::new(0),
+            clocklist: Cell::new(ALLCLOCKS),
+            mode: Cell::new(0),
             min_freq: Cell::new(0),
             max_freq: Cell::new(48000000),
         }
@@ -105,6 +110,9 @@ impl ClockData {
     fn get_clocklist(&self) -> u32 {
         self.clocklist.get()
     }
+    fn get_mode(&self) -> u32 {
+        self.mode.get()
+    }
     fn get_min_freq(&self) -> u32 {
         self.min_freq.get()
     }
@@ -125,6 +133,9 @@ impl ClockData {
     }
     fn set_clocklist(&self, clocklist: u32) {
         self.clocklist.set(clocklist);
+    }
+    fn set_mode(&self, mode: u32) {
+        self.mode.set(mode);
     }
     fn set_min_freq(&self, min_freq: u32) {
         self.min_freq.set(min_freq);
@@ -299,15 +310,12 @@ impl ImixClockManager {
     }
 
     fn update_clockmask(&self, client_index: usize) {
-        let clocklist = self.clients[client_index].get_clocklist();
         let freq_clockmask = self.freq_clockmask(
                     self.clients[client_index].get_min_freq(),
                     self.clients[client_index].get_max_freq());
-        if clocklist == 0 {
-            self.clients[client_index].set_clockmask(freq_clockmask);
-        } else {
-            self.clients[client_index].set_clockmask(clocklist & (freq_clockmask | 0x1));
-        }
+        let mode = self.clients[client_index].get_mode();
+        self.clients[client_index].set_clockmask(
+            self.clients[client_index].get_clocklist() & (mode | freq_clockmask));
     }
 }
 
@@ -426,6 +434,15 @@ impl ClockManager for ImixClockManager {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
+    fn set_mode(&self, cidx:&'static Self::ClientIndex, mode: u32) -> ReturnCode {
+        let client_index = cidx.get_index();
+        if client_index >= self.num_clients.get() {
+            return ReturnCode::EINVAL;
+        }
+        self.clients[client_index].set_mode(mode);
+        self.update_clockmask(client_index);
+        return ReturnCode::SUCCESS;
+    }
     fn set_min_frequency(&self, cidx:&'static Self::ClientIndex, min_freq: u32) ->
                                                         ReturnCode {
         let client_index = cidx.get_index();
@@ -460,6 +477,13 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_clocklist());
+    }
+    fn get_mode(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
+        let client_index = cidx.get_index();
+        if client_index >= self.num_clients.get() {
+            return Err(ReturnCode::EINVAL);
+        }
+        return Ok(self.clients[client_index].get_mode());
     }
     fn get_min_frequency(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
         let client_index = cidx.get_index();
