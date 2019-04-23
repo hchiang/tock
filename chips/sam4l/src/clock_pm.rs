@@ -360,7 +360,6 @@ impl ClockManager for ImixClockManager {
             } 
             else {
                 nolock_clockmask &= client_clocks;
-r 
                 // The next clock that will be changed to is also compatible
                 if nolock_clockmask & self.change_clockmask.get() != 0 {
                     self.nolock_clockmask.set(nolock_clockmask);
