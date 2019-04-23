@@ -300,10 +300,10 @@ impl ImixClockManager {
 
     fn update_clockmask(&self, client_index: usize) {
         self.clients[client_index].set_clockmask(
-            self.clients[client_index].get_clocklist() &
-            self.freq_clockmask(
+            self.clients[client_index].get_clocklist() & 
+            (0x1 | self.freq_clockmask(
                 self.clients[client_index].get_min_freq(),
-                self.clients[client_index].get_max_freq()));
+                self.clients[client_index].get_max_freq())));
     }
 }
 
