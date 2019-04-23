@@ -353,22 +353,15 @@ impl ClockManager for ImixClockManager {
         }
         // The current clock is compatible and client doesn't need a lock
         else if !self.clients[client_index].get_need_lock() {
-            //TODO change clock if client is the only one running
-            let mut nolock_clockmask = self.nolock_clockmask.get();
-            if self.lock_count.get() == 0 && self.nolock_clockmask.get() == ALLCLOCKS {
-                self.update_clock(); 
-            } 
+            let nolock_clockmask = self.nolock_clockmask.get() & client_clocks;
+            // The next clock that will be changed to is also compatible
+            if nolock_clockmask & self.change_clockmask.get() != 0 {
+                self.nolock_clockmask.set(nolock_clockmask);
+                self.clients[client_index].set_running(true);
+                self.clients[client_index].client_enabled();
+            }
             else {
-                nolock_clockmask &= client_clocks;
-                // The next clock that will be changed to is also compatible
-                if nolock_clockmask & self.change_clockmask.get() != 0 {
-                    self.nolock_clockmask.set(nolock_clockmask);
-                    self.clients[client_index].set_running(true);
-                    self.clients[client_index].client_enabled();
-                }
-                else {
-                    self.change_clock.set(true);
-                }
+                self.change_clock.set(true);
             }
         }
         // The current clock is compatible and there is no pending clock change
