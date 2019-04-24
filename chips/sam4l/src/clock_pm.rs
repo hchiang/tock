@@ -44,7 +44,8 @@ struct ClockData {
     client_index: Cell<&'static ImixClientIndex>,
     enabled: Cell<bool>,
     need_lock: Cell<bool>,
-    // running is used to keep track of running clients that don't take locks
+    // running is true if a client that does not need a lock has had
+    //      client_enabled called
     running: Cell<bool>,
     clockmask: Cell<u32>,
     clocklist: Cell<u32>,
@@ -250,9 +251,9 @@ impl ImixClockManager {
                 }
                 let new_change_clockmask = change_clockmask & 
                                     self.clients[next_client].get_clockmask();
-                if new_change_clockmask != 0 {
+                //if new_change_clockmask != 0 {
                     change_clockmask = new_change_clockmask;
-                }
+                //}
             }
             else {
                 clockmask = next_clockmask;
@@ -289,6 +290,7 @@ impl ImixClockManager {
             if !self.clients[i].get_enabled() {
                 continue;
             }
+            // It's the clock requested by the peripheral
             if clock & self.clients[i].get_clockmask() != 0 {
                 if self.clients[i].get_need_lock() {
                     self.lock_count.set(self.lock_count.get()+1);
@@ -345,12 +347,14 @@ impl ClockManager for ImixClockManager {
 
         self.clients[client_index].set_enabled(true);
         let client_clocks = self.clients[client_index].get_clockmask();
+        let next_clockmask = self.change_clockmask.get() & client_clocks;
 
         // The current clock is incompatible
+        // This also captures the case where no peripherals are running
+        //      if the peripheral's last bit is not set 
         if client_clocks & self.current_clock.get() == 0 {
             // Choose what the next clock will be
             self.change_clock.set(true);
-            let next_clockmask = self.change_clockmask.get() & client_clocks;
             //if next_clockmask != 0 { 
             self.change_clockmask.set(next_clockmask);
             //}
@@ -369,6 +373,7 @@ impl ClockManager for ImixClockManager {
                 self.clients[client_index].client_enabled();
             }
             else {
+                self.change_clockmask.set(next_clockmask);
                 self.change_clock.set(true);
             }
         }
@@ -376,6 +381,10 @@ impl ClockManager for ImixClockManager {
         else if !self.change_clock.get() {
             self.lock_count.set(self.lock_count.get()+1);
             self.clients[client_index].client_enabled();
+        }
+        else {
+             self.change_clockmask.set(next_clockmask);
+
         }
         return Ok(pm::get_system_frequency());
     }
