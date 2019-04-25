@@ -290,7 +290,7 @@ impl SpiHw {
         unsafe {
             let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) != 0;
             if gpio { // For this app, we are waiting on interrupt from radio
-                pm::PM.change_system_clock(SystemClockSource::RC1M);
+                pm::PM.change_system_clock(SystemClockSource::RcsysAt115kHz);
             } else {
                 pm::PM.change_system_clock(SystemClockSource::RC80M);
             }
