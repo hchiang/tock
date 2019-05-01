@@ -994,9 +994,8 @@ impl hil::flash::Flash for FLASHCALW {
 }
 
 impl hil::clock_pm::ClockClient for FLASHCALW {
-    fn clock_enabled(&self) {
-    }
-    fn clock_disabled(&self) {
-    }
+    fn configure_clock(&self, frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
 }
 

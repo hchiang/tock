@@ -506,6 +506,7 @@ pub unsafe fn reset_handler() {
 
 struct Dummy;
 impl kernel::hil::clock_pm::ClockClient for Dummy {
+    fn configure_clock(&self, frequency: u32) {}
     fn clock_enabled(&self) {}
     fn clock_disabled(&self) {}
 }

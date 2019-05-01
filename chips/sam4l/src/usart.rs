@@ -711,8 +711,13 @@ impl USART<'a> {
         usart.registers.cr.write(Control::RSTSTA::SET);
     }
 
-    fn set_baud_rate(&self, usart: &USARTRegManager, baud_rate: u32) {
-        let system_frequency = pm::get_system_frequency();
+    fn set_baud_rate(&self, usart: &USARTRegManager, baud_rate: u32, freq: u32) {
+        let system_frequency: u32;
+        if freq == 0 {
+            system_frequency = pm::get_system_frequency();
+        } else {
+            system_frequency = freq;
+        }
         self.baud_rate.set(baud_rate);
 
         // The clock divisor is calculated differently in UART and SPI modes.
@@ -791,7 +796,6 @@ impl USART<'a> {
     pub fn transmit_callback(&self) {
         let usart = &USARTRegManager::new(&self);
         // enable TX
-        self.set_baud_rate(usart, self.baud_rate.get());
         self.enable_tx(usart);
         self.usart_tx_state.set(USARTStateTX::DMA_Transmitting);
 
@@ -1031,7 +1035,7 @@ impl uart::Configure for USART<'a> {
         };
         usart.registers.mr.write(mode);
         // Set baud rate
-        self.set_baud_rate(usart, parameters.baud_rate);
+        self.set_baud_rate(usart, parameters.baud_rate, 0);
 
         ReturnCode::SUCCESS
     }
@@ -1079,7 +1083,7 @@ impl spi::SpiMaster for USART<'a> {
         self.usart_mode.set(UsartMode::Spi);
 
         // Set baud rate, default to 2 MHz.
-        self.set_baud_rate(usart, 2000000);
+        self.set_baud_rate(usart, 2000000, 0);
 
         usart.registers.mr.write(
             Mode::MODE::SPI_MASTER
@@ -1209,7 +1213,7 @@ impl spi::SpiMaster for USART<'a> {
     /// Returns the actual rate set
     fn set_rate(&self, rate: u32) -> u32 {
         let usart = &USARTRegManager::new(&self);
-        self.set_baud_rate(usart, rate);
+        self.set_baud_rate(usart, rate, 0);
 
         // Calculate what rate will actually be
         let system_frequency = pm::get_system_frequency();
@@ -1292,10 +1296,11 @@ impl spi::SpiMaster for USART<'a> {
 }
 
 impl hil::clock_pm::ClockClient for USART<'a> {
+    fn configure_clock(&self, frequency: u32) {
+        let usart = &USARTRegManager::new(&self);
+        self.set_baud_rate(usart, self.baud_rate.get(), frequency);
+    }
     fn clock_enabled(&self) {
-        //if self.callback_rx_len.get() > 0 {
-        //    self.receive_callback();
-        //}
         if self.callback_tx_len.get() > 0 {
             self.transmit_callback();
         }

@@ -4,7 +4,6 @@ use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
 use crate::pm;
 use kernel::debug;
-use kernel::debug_gpio;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
@@ -73,6 +72,17 @@ impl ClockData {
         self.client.set(client);
     }
 
+    fn configure_clock(&self, frequency: u32) {
+        let client = self.client.take();
+        match client {
+            Some(clock_client) => {
+                clock_client.configure_clock(frequency);
+                self.client.set(clock_client);
+            },
+            None => {},
+        }
+    }
+    
     fn client_enabled(&self) {
         let client = self.client.take();
         match client {
@@ -187,10 +197,8 @@ impl ImixClockManager {
         if min_freq <= 16000000 && max_freq >= 16000000 { 
             clockmask |= EXTOSC;
         }
-        if min_freq <= 48000000 && max_freq >= 20000000 { 
-            clockmask |= DFLL;
-        }
         if min_freq <= 48000000 && max_freq >= 48000000 { 
+            clockmask |= DFLL;
             clockmask |= PLL;
         }
         if min_freq <= 40000000 && max_freq >= 40000000 { 
@@ -251,9 +259,7 @@ impl ImixClockManager {
                 }
                 let new_change_clockmask = change_clockmask & 
                                     self.clients[next_client].get_clockmask();
-                //if new_change_clockmask != 0 {
-                    change_clockmask = new_change_clockmask;
-                //}
+                change_clockmask = new_change_clockmask;
             }
             else {
                 clockmask = next_clockmask;
@@ -274,13 +280,30 @@ impl ImixClockManager {
             } 
         }
 
-        // Change the clock
         let clock_changed = self.current_clock.get() != clock;
         self.current_clock.set(clock);
+
+        // Change the clock
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
+            let system_freq = pm::get_clock_frequency(system_clock);
+            let old_system_freq = pm::get_system_frequency();
+            if old_system_freq < system_freq {
+                for i in 0..self.num_clients.get() { 
+                    if self.clients[i].get_running() {
+                        self.clients[i].configure_clock(system_freq);
+                    }
+                } 
+            }
             unsafe {
                 pm::PM.change_system_clock(system_clock);
+            }
+            if old_system_freq > system_freq {
+                for i in 0..self.num_clients.get() { 
+                    if self.clients[i].get_running() {
+                        self.clients[i].configure_clock(system_freq);
+                    }
+                } 
             }
         }
 
@@ -294,10 +317,12 @@ impl ImixClockManager {
             if clock & self.clients[i].get_clockmask() != 0 {
                 if self.clients[i].get_need_lock() {
                     self.lock_count.set(self.lock_count.get()+1);
+                    self.clients[i].configure_clock(0);
                     self.clients[i].client_enabled();
                 }
                 else if !self.clients[i].get_running() {
                     self.clients[i].set_running(true);
+                    self.clients[i].configure_clock(0);
                     self.clients[i].client_enabled();
                 }
             }

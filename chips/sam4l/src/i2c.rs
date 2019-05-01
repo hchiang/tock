@@ -708,9 +708,14 @@ impl I2CHw {
 
     /// Set the clock prescaler and the time widths of the I2C signals
     /// in the CWGR register to make the bus run at a particular I2C speed.
-    fn set_bus_speed(&self, twim: &TWIMRegisterManager) {
+    fn set_bus_speed(&self, twim: &TWIMRegisterManager, frequency: u32) {
         // Set I2C waveform timing parameters based on ASF code
-        let system_frequency = pm::get_system_frequency();
+        let system_frequency; 
+        if frequency == 0 {
+            system_frequency = pm::get_system_frequency();
+        } else {
+            system_frequency = frequency;
+        }
         let mut exp = 0;
         let mut f_prescaled = system_frequency / 400000 / 2;
         while (f_prescaled > 0xff) && (exp <= 0x7) {
@@ -1361,7 +1366,7 @@ impl hil::i2c::I2CMaster for I2CHw {
         twim.registers.cr.write(Control::MDIS::SET);
 
         // Init the bus speed
-        self.set_bus_speed(twim);
+        self.set_bus_speed(twim, 0);
 
         // slew
         twim.registers.srr.write(
@@ -1466,10 +1471,11 @@ impl hil::i2c::I2CSlave for I2CHw {
 impl hil::i2c::I2CMasterSlave for I2CHw {}
 
 impl ClockClient for I2CHw {
-    fn clock_enabled(&self) {
+    fn configure_clock(&self, frequency: u32) {
         let twim = &TWIMRegisterManager::new(&self);
-        self.set_bus_speed(twim);
-
+        self.set_bus_speed(twim, frequency);
+    }
+    fn clock_enabled(&self) {
         let addr = self.callback_addr.get();
         let data = self.callback_data.take().unwrap();
         let write_len = self.callback_write_len.get();

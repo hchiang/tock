@@ -572,6 +572,7 @@ impl hil::gpio::Pin for GPIOPin {
 }
 
 impl ClockClient for GPIOPin {
+    fn configure_clock(&self, frequency: u32) {}
     fn clock_enabled(&self) {}
     fn clock_disabled(&self) {}
 }

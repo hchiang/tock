@@ -317,10 +317,15 @@ impl SpiHw {
     ///
     /// The lowest available baud rate is 188235 baud. If the
     /// requested rate is lower, 188235 baud will be selected.
-    pub fn set_baud_rate(&self, rate: u32) -> u32 {
+    pub fn set_baud_rate(&self, rate: u32, frequency: u32) -> u32 {
         // Main clock frequency
         let mut real_rate = rate;
-        let clock = pm::get_system_frequency();
+        let clock; 
+        if frequency == 0 {
+            clock = pm::get_system_frequency();
+        } else {
+            clock = frequency;
+        }
 
         if real_rate < 188235 {
             real_rate = 188235;
@@ -632,7 +637,7 @@ impl spi::SpiMaster for SpiHw {
     }
 
     fn set_rate(&self, rate: u32) -> u32 {
-        self.set_baud_rate(rate)
+        self.set_baud_rate(rate, 0)
     }
 
     fn get_rate(&self) -> u32 {
@@ -785,8 +790,10 @@ impl DMAClient for SpiHw {
 }
 
 impl ClockClient for SpiHw {
+    fn configure_clock(&self, frequency: u32) {
+        self.set_baud_rate(self.baud_rate.get(), frequency);
+    }
     fn clock_enabled(&self) {
-        self.set_baud_rate(self.baud_rate.get());
         let write_buf = self.callback_write_buffer.take();
         let read_buf = self.callback_read_buffer.take();
         self.read_write_bytes(write_buf, read_buf, self.callback_len.get());

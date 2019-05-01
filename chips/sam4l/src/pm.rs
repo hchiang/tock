@@ -963,19 +963,23 @@ unsafe fn configure_1mhz_rc() {
 pub fn get_system_frequency() -> u32 {
     // Return the current system frequency
     unsafe {
-        match PM.system_clock_source.get() {
-            SystemClockSource::RcsysAt115kHz => 115200,
-            SystemClockSource::DfllRc32kAt48MHz => 48000000,
-            SystemClockSource::ExternalOscillator { .. } => 16000000,
-            SystemClockSource::PllExternalOscillatorAt48MHz { .. } => 48000000,
-            SystemClockSource::RC80M => 40000000,
-            SystemClockSource::RCFAST { frequency } => match frequency {
-                RcfastFrequency::Frequency4MHz => 4300000,
-                RcfastFrequency::Frequency8MHz => 8200000,
-                RcfastFrequency::Frequency12MHz => 12000000,
-            },
-            SystemClockSource::RC1M => 1000000,
-        }
+        get_clock_frequency(PM.system_clock_source.get())
+    }
+}
+
+pub fn get_clock_frequency(clock: SystemClockSource) -> u32 {
+    match clock {
+        SystemClockSource::RcsysAt115kHz => 115200,
+        SystemClockSource::DfllRc32kAt48MHz => 48000000,
+        SystemClockSource::ExternalOscillator { .. } => 16000000,
+        SystemClockSource::PllExternalOscillatorAt48MHz { .. } => 48000000,
+        SystemClockSource::RC80M => 40000000,
+        SystemClockSource::RCFAST { frequency } => match frequency {
+            RcfastFrequency::Frequency4MHz => 4300000,
+            RcfastFrequency::Frequency8MHz => 8200000,
+            RcfastFrequency::Frequency12MHz => 12000000,
+        },
+        SystemClockSource::RC1M => 1000000,
     }
 }
 

@@ -502,7 +502,7 @@ impl Adc {
     // the desired frequency and enables the ADC. Subsequent calls with the same frequency
     // value have no effect. Using the slowest clock also ensures efficient discrete
     // sampling.
-    fn config_and_enable(&self, frequency: u32) -> ReturnCode {
+    fn config_and_enable(&self, frequency: u32, system_frequency: u32) -> ReturnCode {
         if self.active.get() {
             // disallow reconfiguration during sampling
             ReturnCode::EBUSY
@@ -572,7 +572,12 @@ impl Adc {
                 // Formula: f(ADC_CLK) = f(CLK_CPU)/2^(N+2) <= 1.5 MHz
                 // and we solve for N
                 // becomes: N <= ceil(log_2(f(CLK_CPU)/1500000)) - 2
-                let cpu_frequency = pm::get_system_frequency();
+                let cpu_frequency;
+                if system_frequency == 0 {
+                    cpu_frequency = pm::get_system_frequency();
+                } else {
+                    cpu_frequency = system_frequency;
+                }
                 let divisor = (cpu_frequency + (1500000 - 1)) / 1500000; // ceiling of division 
                 clock_divisor = math::log_base_two(math::closest_power_of_two(divisor));
                 if clock_divisor > 2 {
@@ -642,9 +647,6 @@ impl Adc {
 
     fn sample_highspeed_callback(&self) {
         let regs: &AdcRegisters = &*self.registers;
-
-        let res = self.config_and_enable(self.callback_frequency.get());
-        if res != ReturnCode::SUCCESS { return;}
 
         self.active.set(true);
         self.continuous.set(true);
@@ -722,7 +724,7 @@ impl hil::adc::Adc for Adc {
         let regs: &AdcRegisters = &*self.registers;
 
         // always configure to 1KHz to get the slowest clock with single sampling
-        let res = self.config_and_enable(1000);
+        let res = self.config_and_enable(1000, 0);
 
         if res != ReturnCode::SUCCESS {
             return res;
@@ -772,7 +774,7 @@ impl hil::adc::Adc for Adc {
     fn sample_continuous(&self, channel: &Self::Channel, frequency: u32) -> ReturnCode {
         let regs: &AdcRegisters = &*self.registers;
 
-        let res = self.config_and_enable(frequency);
+        let res = self.config_and_enable(frequency, 0);
 
         if res != ReturnCode::SUCCESS {
             return res;
@@ -1136,6 +1138,10 @@ impl dma::DMAClient for Adc {
 }
 
 impl hil::clock_pm::ClockClient for Adc {
+    fn configure_clock(&self, frequency: u32) {
+        let regs: &AdcRegisters = &*self.registers;
+        let res = self.config_and_enable(self.callback_frequency.get(), frequency);
+    }
     fn clock_enabled(&self) {
         self.sample_highspeed_callback();
     }

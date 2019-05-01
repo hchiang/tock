@@ -5,6 +5,7 @@ use crate::returncode::ReturnCode;
 /// Implemented by each peripheral
 pub trait ClockClient {
     /// The ClockManager will call this function to report a clock change
+    fn configure_clock(&self, frequency: u32);
     fn clock_enabled(&self);
     fn clock_disabled(&self);
 }
@@ -49,11 +50,13 @@ pub trait ClockManager {
     fn set_mode(&self, client_index:&'static Self::ClientIndex, mode: u32) -> ReturnCode;
     fn set_min_frequency(&self, client_index:&'static Self::ClientIndex, min_freq: u32) -> ReturnCode;
     fn set_max_frequency(&self, client_index:&'static Self::ClientIndex, max_freq: u32) -> ReturnCode;
+    //fn set_threshold_frequency(&self, client_index:&'static Self::ClientIndex, thresh_freq: u32) -> ReturnCode;
 
     fn get_need_lock(&self, client_index:&'static Self::ClientIndex) -> Result<bool, ReturnCode>;
     fn get_clocklist(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn get_mode(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn get_min_frequency(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn get_max_frequency(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
+    //fn get_threshold_frequency(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
 }
 
