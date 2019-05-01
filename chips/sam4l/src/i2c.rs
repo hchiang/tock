@@ -563,6 +563,10 @@ pub struct I2CHw {
     slave_write_buffer_len: Cell<u8>,
     slave_write_buffer_index: Cell<u8>,
 
+    callback_addr: Cell<u8>,
+    callback_data: TakeCell<'static, [u8]>,
+    callback_write_len: Cell<u8>,
+    callback_read_len: Cell<u8>,
     client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
 }
 
@@ -694,6 +698,10 @@ impl I2CHw {
             slave_write_buffer_len: Cell::new(0),
             slave_write_buffer_index: Cell::new(0),
 
+            callback_addr: Cell::new(0),
+            callback_data: TakeCell::empty(),
+            callback_write_len: Cell::new(0),
+            callback_read_len: Cell::new(0),
             client_index: OptionalCell::empty(),
         }
     }
@@ -782,6 +790,12 @@ impl I2CHw {
         match on_deck {
             None => {
                 {
+                    self.client_index.map( |client_index|
+                        unsafe {
+                            clock_pm::CM.disable_clock(client_index)
+                        }
+                    );
+
                     let twim = &TWIMRegisterManager::new(&self);
 
                     twim.registers.cmdr.set(0);
@@ -1301,15 +1315,13 @@ impl I2CHw {
             twis.registers.cr.write(control + ControlSlave::SEN::Enable);
         }
     }
-}
+    
+    fn cm_setup(&self, addr: u8, data: &'static mut [u8], write_len: u8, read_len: u8) {
+        self.callback_addr.set(addr);
+        self.callback_data.replace(data);
+        self.callback_write_len.set(write_len);
+        self.callback_read_len.set(read_len);
 
-impl DMAClient for I2CHw {
-    fn transfer_done(&self, _pid: DMAPeripheral) {}
-}
-
-impl hil::i2c::I2CMaster for I2CHw {
-    /// This enables the entire I2C peripheral
-    fn enable(&self) {
         if self.client_index.is_none() {
             unsafe {
             let regval = clock_pm::CM.register(&I2C2);
@@ -1328,7 +1340,16 @@ impl hil::i2c::I2CMaster for I2CHw {
             clock_pm::CM.enable_clock(client_index)
             }
         );
-        
+    }
+}
+
+impl DMAClient for I2CHw {
+    fn transfer_done(&self, _pid: DMAPeripheral) {}
+}
+
+impl hil::i2c::I2CMaster for I2CHw {
+    /// This enables the entire I2C peripheral
+    fn enable(&self) {
         //disable the i2c slave peripheral
         hil::i2c::I2CSlave::disable(self);
 
@@ -1366,27 +1387,15 @@ impl hil::i2c::I2CMaster for I2CHw {
     }
 
     fn write(&self, addr: u8, data: &'static mut [u8], len: u8) {
-        I2CHw::write(
-            self,
-            addr,
-            Command::START::StartCondition + Command::STOP::SendStop,
-            data,
-            len,
-        );
+        self.cm_setup(addr, data, len, 0);
     }
 
     fn read(&self, addr: u8, data: &'static mut [u8], len: u8) {
-        I2CHw::read(
-            self,
-            addr,
-            Command::START::StartCondition + Command::STOP::SendStop,
-            data,
-            len,
-        );
+        self.cm_setup(addr, data, 0, len);
     }
 
     fn write_read(&self, addr: u8, data: &'static mut [u8], write_len: u8, read_len: u8) {
-        I2CHw::write_read(self, addr, data, write_len, read_len)
+        self.cm_setup(addr, data, write_len, read_len);
     }
 }
 
@@ -1460,6 +1469,31 @@ impl ClockClient for I2CHw {
     fn clock_enabled(&self) {
         let twim = &TWIMRegisterManager::new(&self);
         self.set_bus_speed(twim);
+
+        let addr = self.callback_addr.get();
+        let data = self.callback_data.take().unwrap();
+        let write_len = self.callback_write_len.get();
+        let read_len = self.callback_read_len.get();
+
+        if read_len == 0 {
+            I2CHw::write(
+                self,
+                addr,
+                Command::START::StartCondition + Command::STOP::SendStop,
+                data,
+                write_len,
+            );
+        } else if write_len == 0 {
+            I2CHw::read(
+                self,
+                addr,
+                Command::START::StartCondition + Command::STOP::SendStop,
+                data,
+                read_len,
+            );
+        } else {
+            I2CHw::write_read(self, addr, data, write_len, read_len);
+        }
     }
     fn clock_disabled(&self) {}
 }
