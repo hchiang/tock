@@ -51,6 +51,7 @@ struct ClockData {
     mode: Cell<u32>,
     min_freq: Cell<u32>,
     max_freq: Cell<u32>,
+    preferred: Cell<u32>,
 }
 
 impl ClockData {
@@ -66,6 +67,7 @@ impl ClockData {
             mode: Cell::new(0),
             min_freq: Cell::new(0),
             max_freq: Cell::new(48000000),
+            preferred: Cell::new(0),
         }
     }
     fn initialize(&self, client: &'static ClockClient) {
@@ -130,6 +132,9 @@ impl ClockData {
     fn get_max_freq(&self) -> u32 {
         self.max_freq.get()
     }
+    fn get_preferred(&self) -> u32 {
+        self.preferred.get()
+    }
     fn set_enabled(&self, enabled: bool) {
         self.enabled.set(enabled);
     }
@@ -153,6 +158,9 @@ impl ClockData {
     }
     fn set_max_freq(&self, max_freq: u32) {
         self.max_freq.set(max_freq);
+    }
+    fn set_preferred(&self, max_freq: u32) {
+        self.preferred.set(max_freq);
     }
 }
 
@@ -497,6 +505,16 @@ impl ClockManager for ImixClockManager {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
+
+    fn set_preferred(&self, cidx:&'static Self::ClientIndex, max_freq: u32) -> 
+                                                        ReturnCode {
+        let client_index = cidx.get_index();
+        if client_index >= self.num_clients.get() {
+            return ReturnCode::EINVAL;
+        }
+        self.clients[client_index].set_preferred(max_freq);
+        return ReturnCode::SUCCESS;
+    }
     
     fn get_need_lock(&self, cidx:&'static Self::ClientIndex) -> Result<bool, ReturnCode> {
         let client_index = cidx.get_index();
@@ -532,6 +550,13 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_max_freq());
+    }
+    fn get_preferred(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
+        let client_index = cidx.get_index();
+        if client_index >= self.num_clients.get() {
+            return Err(ReturnCode::EINVAL);
+        }
+        return Ok(self.clients[client_index].get_preferred());
     }
 }
 

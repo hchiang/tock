@@ -50,13 +50,13 @@ pub trait ClockManager {
     fn set_mode(&self, client_index:&'static Self::ClientIndex, mode: u32) -> ReturnCode;
     fn set_min_frequency(&self, client_index:&'static Self::ClientIndex, min_freq: u32) -> ReturnCode;
     fn set_max_frequency(&self, client_index:&'static Self::ClientIndex, max_freq: u32) -> ReturnCode;
-    //fn set_threshold_frequency(&self, client_index:&'static Self::ClientIndex, thresh_freq: u32) -> ReturnCode;
+    fn set_preferred(&self, client_index:&'static Self::ClientIndex, thresh_freq: u32) -> ReturnCode;
 
     fn get_need_lock(&self, client_index:&'static Self::ClientIndex) -> Result<bool, ReturnCode>;
     fn get_clocklist(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn get_mode(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn get_min_frequency(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn get_max_frequency(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
-    //fn get_threshold_frequency(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
+    fn get_preferred(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
 }
 
