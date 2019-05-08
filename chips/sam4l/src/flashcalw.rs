@@ -562,7 +562,7 @@ impl FLASHCALW {
                 }
                 self.client_index.map( |client_index|
                     unsafe {
-                        clock_pm::CM.set_mode(client_index, 0);
+                        clock_pm::CM.set_preferred(client_index, 0x04);
                         clock_pm::CM.enable_clock(client_index)
                     }
                 );
@@ -606,7 +606,7 @@ impl FLASHCALW {
                 }
                 self.client_index.map( |client_index|
                     unsafe {
-                        clock_pm::CM.set_mode(client_index, 0);
+                        clock_pm::CM.set_preferred(client_index, 0x04);
                         clock_pm::CM.enable_clock(client_index)
                     }
                 );
@@ -924,7 +924,7 @@ impl FLASHCALW {
         }
         self.client_index.map( |client_index|
             unsafe {
-                clock_pm::CM.set_mode(client_index, 1);
+                clock_pm::CM.set_preferred(client_index, 0x80);
                 clock_pm::CM.enable_clock(client_index);
             }
         );

@@ -14,9 +14,9 @@ const RCFAST4M: u32     = 0x008;
 const RCFAST8M: u32     = 0x010;    
 const RCFAST12M: u32    = 0x020; 
 const EXTOSC: u32       = 0x040; 
-const DFLL: u32         = 0x080; 
-const PLL: u32          = 0x100; 
-const RC80M: u32        = 0x200;
+const RC80M: u32        = 0x080;
+const DFLL: u32         = 0x100; 
+const PLL: u32          = 0x200; 
 const ALLCLOCKS: u32    = 0x3ff;
 
 const IO_MODE: u32      = 0x0;
@@ -123,9 +123,6 @@ impl ClockData {
     fn get_clocklist(&self) -> u32 {
         self.clocklist.get()
     }
-    fn get_mode(&self) -> u32 {
-        self.mode.get()
-    }
     fn get_min_freq(&self) -> u32 {
         self.min_freq.get()
     }
@@ -149,9 +146,6 @@ impl ClockData {
     }
     fn set_clocklist(&self, clocklist: u32) {
         self.clocklist.set(clocklist);
-    }
-    fn set_mode(&self, mode: u32) {
-        self.mode.set(mode);
     }
     fn set_min_freq(&self, min_freq: u32) {
         self.min_freq.set(min_freq);
@@ -231,11 +225,11 @@ impl ImixClockManager {
             0x40 => system_clock = pm::SystemClockSource::ExternalOscillator{
                                     frequency: pm::OscillatorFrequency::Frequency16MHz,
                                     startup_mode: pm::OscillatorStartup::FastStart},
-            0x80 => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
-            0x100 => system_clock = pm::SystemClockSource::PllExternalOscillatorAt48MHz{ 
+            0x80 => system_clock = pm::SystemClockSource::RC80M,
+            0x100 => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
+            0x200 => system_clock = pm::SystemClockSource::PllExternalOscillatorAt48MHz{ 
                                     frequency: pm::OscillatorFrequency::Frequency16MHz,
                                     startup_mode: pm::OscillatorStartup::FastStart},
-            0x200 => system_clock = pm::SystemClockSource::RC80M,
             _ => system_clock = pm::SystemClockSource::RC80M,
         }
         return system_clock;
@@ -249,6 +243,7 @@ impl ImixClockManager {
         let mut change_clockmask = ALLCLOCKS;
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
+        let mut preferred = 0;
         for _i in 0..self.num_clients.get() { 
             if !self.clients[next_client].get_enabled() {
                 next_client += 1;
@@ -271,6 +266,7 @@ impl ImixClockManager {
             }
             else {
                 clockmask = next_clockmask;
+                preferred |= self.clients[next_client].get_preferred();
             }
             
             next_client += 1;
@@ -279,6 +275,9 @@ impl ImixClockManager {
             }
         }
         self.change_clockmask.set(change_clockmask);
+        if preferred & clockmask != 0 {
+            clockmask = preferred;
+        }
         // Choose only one clock from clockmask
         let mut clock = 0x1;
         for i in 0..NUM_CLOCK_SOURCES {
@@ -348,9 +347,8 @@ impl ImixClockManager {
         let freq_clockmask = self.freq_clockmask(
                     self.clients[client_index].get_min_freq(),
                     self.clients[client_index].get_max_freq());
-        let mode = self.clients[client_index].get_mode();
         self.clients[client_index].set_clockmask(
-            self.clients[client_index].get_clocklist() & (mode | freq_clockmask));
+            self.clients[client_index].get_clocklist() & freq_clockmask);
     }
 }
 
@@ -476,15 +474,6 @@ impl ClockManager for ImixClockManager {
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
     }
-    fn set_mode(&self, cidx:&'static Self::ClientIndex, mode: u32) -> ReturnCode {
-        let client_index = cidx.get_index();
-        if client_index >= self.num_clients.get() {
-            return ReturnCode::EINVAL;
-        }
-        self.clients[client_index].set_mode(mode);
-        self.update_clockmask(client_index);
-        return ReturnCode::SUCCESS;
-    }
     fn set_min_frequency(&self, cidx:&'static Self::ClientIndex, min_freq: u32) ->
                                                         ReturnCode {
         let client_index = cidx.get_index();
@@ -529,13 +518,6 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_clocklist());
-    }
-    fn get_mode(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
-        let client_index = cidx.get_index();
-        if client_index >= self.num_clients.get() {
-            return Err(ReturnCode::EINVAL);
-        }
-        return Ok(self.clients[client_index].get_mode());
     }
     fn get_min_frequency(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
         let client_index = cidx.get_index();
