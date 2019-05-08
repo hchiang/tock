@@ -480,6 +480,25 @@ impl ClockManager for ImixClockManager {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
+        if self.clients[client_index].get_preferred() == 0 {
+            if min_freq <= 115200 {
+                self.clients[client_index].set_preferred(RCSYS);
+            } else if min_freq <= 1000000 {
+                self.clients[client_index].set_preferred(RC1M);
+            } else if min_freq <= 4300000 {
+                self.clients[client_index].set_preferred(RCFAST4M);
+            } else if min_freq <= 8200000 {
+                self.clients[client_index].set_preferred(RCFAST8M);
+            } else if min_freq <= 12000000 {
+                self.clients[client_index].set_preferred(RCFAST12M);
+            } else if min_freq <= 16000000 {
+                self.clients[client_index].set_preferred(EXTOSC);
+            } else if min_freq <= 40000000 {
+                self.clients[client_index].set_preferred(RC80M);
+            } else if min_freq <= 48000000 {
+                self.clients[client_index].set_preferred(DFLL);
+            }
+        }
         self.clients[client_index].set_min_freq(min_freq);
         self.update_clockmask(client_index);
         return ReturnCode::SUCCESS;
