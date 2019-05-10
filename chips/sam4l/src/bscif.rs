@@ -336,7 +336,6 @@ pub fn enable_rc32k() {
     );
     // Wait for it to be ready, although it feels like this won't do anything
     while !BSCIF.rc32kcr.is_set(RC32Control::EN) {}
-
     // Load magic calibration value for the 32KHz RC oscillator
     //
     // Unlock the BSCIF::RC32KTUNE register
@@ -353,9 +352,22 @@ pub fn rc32k_enabled() -> bool {
     return BSCIF.rc32kcr.is_set(RC32Control::EN);
 }
 
+pub unsafe fn disable_rc32k() {
+    let rc32kcr = BSCIF.rc32kcr.extract();
+    // Unlock the BSCIF::RC32KCR register
+    BSCIF
+        .unlock
+        .write(Unlock::KEY.val(0xAA) + Unlock::ADDR.val(0x24));
+
+    // Disable the BSCIF::RC32KCR register
+    BSCIF
+        .rc32kcr
+        .modify_no_read(rc32kcr, RC32Control::EN::GclkSourceDisable);
+}
+
 pub fn setup_rc_1mhz() {
     let rc1mcr = BSCIF.rc1mcr.extract();
-    // Unlock the BSCIF::RC32KCR register
+    // Unlock the BSCIF::RC1MCR register
     BSCIF
         .unlock
         .write(Unlock::KEY.val(0xAA) + Unlock::ADDR.val(0x58));
@@ -370,7 +382,7 @@ pub fn setup_rc_1mhz() {
 
 pub unsafe fn disable_rc_1mhz() {
     let rc1mcr = BSCIF.rc1mcr.extract();
-    // Unlock the BSCIF::RC32KCR register
+    // Unlock the BSCIF::RC1MCR register
     BSCIF
         .unlock
         .write(Unlock::KEY.val(0xAA) + Unlock::ADDR.val(0x58));

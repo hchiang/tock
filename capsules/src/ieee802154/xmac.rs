@@ -84,6 +84,7 @@ use kernel::hil::radio;
 use kernel::hil::rng::{self, Rng};
 use kernel::hil::time::{self, Alarm, Frequency, Time};
 use kernel::ReturnCode;
+use kernel::debug;
 
 // Time the radio will remain awake listening for packets before sleeping.
 // Observing the RF233, receive callbacks for preambles are generated only after
@@ -94,11 +95,11 @@ const WAKE_TIME_MS: u32 = 10;
 // Time the radio will sleep between wakes. Configurable to any desired value
 // less than or equal to the max time the transmitter sends preambles before
 // abandoning the transmission.
-const SLEEP_TIME_MS: u32 = 250;
+const SLEEP_TIME_MS: u32 = 5000;
 // Time the radio will continue to send preamble packets before aborting the
 // transmission and returning ENOACK. Should be at least as large as the maximum
 // sleep time for any node in the network.
-const PREAMBLE_TX_MS: u32 = 251;
+const PREAMBLE_TX_MS: u32 = 150;
 
 // Maximum backoff for a transmitter attempting to send a data packet, when the
 // node has detected a data packet sent to the same destination from another
@@ -442,9 +443,9 @@ impl<R: radio::Radio, A: Alarm> Mac for XMac<'a, R, A> {
 
         // If the radio is on, start the preamble timer and start transmitting
         if self.radio.is_on() {
-            self.state.set(XMacState::TX_PREAMBLE);
-            self.set_timer_ms::<A>(PREAMBLE_TX_MS);
-            self.transmit_preamble();
+            self.state.set(XMacState::TX);
+            //self.set_timer_ms::<A>(PREAMBLE_TX_MS);
+            self.transmit_packet();
 
         // If the radio is currently sleeping, wake it and indicate that when
         // ready, it should begin transmitting preambles
@@ -509,9 +510,9 @@ impl<R: radio::Radio, A: Alarm> radio::PowerClient for XMac<'a, R, A> {
             if let XMacState::STARTUP = self.state.get() {
                 if self.tx_preamble_pending.get() {
                     self.tx_preamble_pending.set(false);
-                    self.state.set(XMacState::TX_PREAMBLE);
-                    self.set_timer_ms::<A>(PREAMBLE_TX_MS);
-                    self.transmit_preamble();
+                    self.state.set(XMacState::TX);
+                    //self.set_timer_ms::<A>(PREAMBLE_TX_MS);
+                    self.transmit_packet();
                 } else {
                     self.state.set(XMacState::AWAKE);
                     self.set_timer_ms::<A>(WAKE_TIME_MS);

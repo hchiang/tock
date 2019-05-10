@@ -68,7 +68,7 @@ enum CCMState {
     Encrypt,
 }
 
-pub struct AES128CCM<'a, A: AES128<'a> + AES128Ctr + AES128CBC> {
+pub struct AES128CCM<'a, A: AES128<'a> + AES128Ctr<'a> + AES128CBC<'a>> {
     aes: &'a A,
     crypt_buf: TakeCell<'a, [u8]>,
     crypt_auth_len: Cell<usize>,
@@ -86,7 +86,7 @@ pub struct AES128CCM<'a, A: AES128<'a> + AES128Ctr + AES128CBC> {
     saved_tag: Cell<[u8; AES128_BLOCK_SIZE]>,
 }
 
-impl<A: AES128<'a> + AES128Ctr + AES128CBC> AES128CCM<'a, A> {
+impl<A: AES128<'a> + AES128Ctr<'a> + AES128CBC<'a>> AES128CCM<'a, A> {
     pub fn new(aes: &'a A, crypt_buf: &'static mut [u8]) -> AES128CCM<'a, A> {
         AES128CCM {
             aes: aes,
@@ -414,9 +414,15 @@ impl<A: AES128<'a> + AES128Ctr + AES128CBC> AES128CCM<'a, A> {
     }
 }
 
-impl<A: AES128<'a> + AES128Ctr + AES128CBC> symmetric_encryption::AES128CCM<'a>
+impl<A: AES128<'a> + AES128Ctr<'a> + AES128CBC<'a>> symmetric_encryption::AES128CCM<'a>
     for AES128CCM<'a, A>
 {
+    fn enable(&self) {
+        self.aes.enable();
+    }
+    fn disable(&self) {
+        self.aes.disable();
+    }
     fn set_client(&self, client: &'a symmetric_encryption::CCMClient) {
         self.crypt_client.set(client);
     }
@@ -492,7 +498,7 @@ impl<A: AES128<'a> + AES128Ctr + AES128CBC> symmetric_encryption::AES128CCM<'a>
     }
 }
 
-impl<A: AES128<'a> + AES128Ctr + AES128CBC> symmetric_encryption::Client<'a> for AES128CCM<'a, A> {
+impl<A: AES128<'a> + AES128Ctr<'a> + AES128CBC<'a>> symmetric_encryption::Client<'a> for AES128CCM<'a, A> {
     fn crypt_done(&self, _: Option<&'a mut [u8]>, crypt_buf: &'a mut [u8]) {
         self.crypt_buf.replace(crypt_buf);
         match self.state.get() {

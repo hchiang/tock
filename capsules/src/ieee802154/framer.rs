@@ -489,6 +489,7 @@ impl<M: Mac, A: AES128CCM<'a>> Framer<'a, M, A> {
                                 let (a_off, m_off) =
                                     (radio::PSDU_OFFSET, radio::PSDU_OFFSET + m_off);
 
+                                self.aes_ccm.enable();
                                 if self.aes_ccm.set_key(&key) != ReturnCode::SUCCESS
                                     || self.aes_ccm.set_nonce(&nonce) != ReturnCode::SUCCESS
                                 {
@@ -529,6 +530,7 @@ impl<M: Mac, A: AES128CCM<'a>> Framer<'a, M, A> {
                         (TxState::Encrypting(info), (ReturnCode::SUCCESS, None))
                     }
                     TxState::ReadyToTransmit(info, buf) => {
+                        self.aes_ccm.disable();
                         let (rval, buf) = self.mac.transmit(buf, info.secured_length());
                         match rval {
                             // If the radio is busy, just wait for either a
@@ -571,6 +573,7 @@ impl<M: Mac, A: AES128CCM<'a>> Framer<'a, M, A> {
                             let (m_off, m_len) = info.ccm_encrypt_ranges();
                             let (a_off, m_off) = (radio::PSDU_OFFSET, radio::PSDU_OFFSET + m_off);
 
+                            self.aes_ccm.enable();
                             if self.aes_ccm.set_key(&key) != ReturnCode::SUCCESS
                                 || self.aes_ccm.set_nonce(&nonce) != ReturnCode::SUCCESS
                             {
@@ -611,6 +614,7 @@ impl<M: Mac, A: AES128CCM<'a>> Framer<'a, M, A> {
                     // offsets may change due to the presence of PayloadIEs.
                     // Hence, we can only use the unsecured length from the
                     // frame info, but not the offsets.
+                    self.aes_ccm.disable();
                     let frame_len = info.unsecured_length();
                     if let Some((data_offset, (header, _))) =
                         Header::decode(&buf[radio::PSDU_OFFSET..], true).done()

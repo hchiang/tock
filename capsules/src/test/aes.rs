@@ -36,7 +36,7 @@ pub struct TestAes128Cbc<'a, A: 'a> {
 const DATA_OFFSET: usize = AES128_BLOCK_SIZE;
 const DATA_LEN: usize = 4 * AES128_BLOCK_SIZE;
 
-impl<A: AES128<'a> + AES128Ctr> TestAes128Ctr<'a, A> {
+impl<A: AES128<'a> + AES128Ctr<'a>> TestAes128Ctr<'a, A> {
     pub fn new(
         aes: &'a A,
         key: &'a mut [u8],
@@ -136,7 +136,7 @@ impl<A: AES128<'a> + AES128Ctr> TestAes128Ctr<'a, A> {
     }
 }
 
-impl<A: AES128<'a> + AES128Ctr> hil::symmetric_encryption::Client<'a> for TestAes128Ctr<'a, A> {
+impl<A: AES128<'a> + AES128Ctr<'a>> hil::symmetric_encryption::Client<'a> for TestAes128Ctr<'a, A> {
     fn crypt_done(&'a self, source: Option<&'a mut [u8]>, dest: &'a mut [u8]) {
         if self.use_source.get() {
             // Take back the source buffer
@@ -187,7 +187,7 @@ impl<A: AES128<'a> + AES128Ctr> hil::symmetric_encryption::Client<'a> for TestAe
     }
 }
 
-impl<A: AES128<'a> + AES128CBC> TestAes128Cbc<'a, A> {
+impl<A: AES128<'a> + AES128CBC<'a>> TestAes128Cbc<'a, A> {
     pub fn new(
         aes: &'a A,
         key: &'a mut [u8],
@@ -288,7 +288,7 @@ impl<A: AES128<'a> + AES128CBC> TestAes128Cbc<'a, A> {
     }
 }
 
-impl<A: AES128<'a> + AES128CBC> hil::symmetric_encryption::Client<'a> for TestAes128Cbc<'a, A> {
+impl<A: AES128<'a> + AES128CBC<'a>> hil::symmetric_encryption::Client<'a> for TestAes128Cbc<'a, A> {
     fn crypt_done(&'a self, source: Option<&'a mut [u8]>, dest: &'a mut [u8]) {
         if self.use_source.get() {
             // Take back the source buffer

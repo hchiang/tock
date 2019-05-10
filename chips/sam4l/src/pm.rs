@@ -567,7 +567,7 @@ pub struct PowerManager {
 }
 
 pub static mut PM: PowerManager = PowerManager {
-    /// Set to the RCSYS by default.
+    /// Set to the RCSYS by default
     system_clock_source: Cell::new(SystemClockSource::RcsysAt115kHz),
 
     system_on_clocks: Cell::new(ClockMask::RCSYS as u32),
@@ -579,12 +579,13 @@ impl PowerManager {
     /// Sets up the system clock. This should be called as one of the first
     /// lines in the `reset_handler` within the platform's `main.rs`.
     pub unsafe fn setup_system_clock(&self, clock_source: SystemClockSource) {
+
         if !self.system_initial_configs.get() {
             // For now, always go to PS2 as it enables all core speeds
-            // These features are not available in PS1: USB, DFLL, Flash programming/erasing
+            // These features are not available in PS1: USB, DFLL, PLL, Programming/Erasing in Flash
             bpm::set_power_scaling(bpm::PowerScaling::PS2);
 
-            // Need the 32k RC oscillator for BPM, AST, and DFLL
+            // Need the 32k RC oscillator for things like BPM module and AST.
             bscif::enable_rc32k();
 
             // Enable HCACHE
@@ -598,11 +599,11 @@ impl PowerManager {
 
         match clock_source {
             SystemClockSource::RcsysAt115kHz => {
-                // No configurations necessary, RCSYS is always on in run mode
-                // Set Flash wait state to 0 for <= 24MHz in PS2
+                // Set wait state
+                select_main_clock(MainClock::RCSYS);
+                // no configurations necessary, RCSYS is always on
                 flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to RCSYS
-                select_main_clock(MainClock::RCSYS);
             }
 
             SystemClockSource::DfllRc32kAt48MHz => {
@@ -618,25 +619,12 @@ impl PowerManager {
                 frequency,
                 startup_mode,
             } => {
-                match self.system_clock_source.get() {
-                    // If the PLL is running (it uses OSC0 as a reference clock),
-                    // temporarily change the system clock to RCSYS to avoid buggy behavior
-                    SystemClockSource::PllExternalOscillatorAt48MHz { .. } => {
-                        select_main_clock(MainClock::RCSYS);
-                    }
-                    // Some peripherals (uart,spi) show buggy behavior if the system clock
-                    // is directly switched from OSC0 to DFLL - no explanation in documentation
-                    SystemClockSource::DfllRc32kAt48MHz => {
-                        select_main_clock(MainClock::RCSYS);
-                    }
-                    _ => {}
-                }
                 // Configure and turn on OSC0
                 configure_external_oscillator(frequency, startup_mode);
-                // Set Flash wait state to 0 for <= 24MHz in PS2
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to OSC0
                 select_main_clock(MainClock::OSC0);
+                // Set Flash wait state to 0 for <= 24MHz in PS2
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
             }
 
             SystemClockSource::PllExternalOscillatorAt48MHz {
@@ -679,37 +667,21 @@ impl PowerManager {
                     scif::disable_rcfast();
                 }
 
-                // Some peripherals (uart,spi) show buggy behavior if the system clock
-                // is directly switched from RCFAST to DFLL - no explanation in documentation
-                match self.system_clock_source.get() {
-                    SystemClockSource::DfllRc32kAt48MHz => {
-                        select_main_clock(MainClock::RCSYS);
-                    }
-                    _ => {}
-                }
-
                 // Configure and turn on RCFAST at specified frequency
                 configure_rcfast(frequency);
-                // Set Flash wait state to 0 for <= 24MHz in PS2
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to RCFAST
                 select_main_clock(MainClock::RCFAST);
+                // Set Flash wait state to 0 for <= 24MHz in PS2
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
             }
 
             SystemClockSource::RC1M => {
-                match self.system_clock_source.get() {
-                    SystemClockSource::DfllRc32kAt48MHz => {
-                        select_main_clock(MainClock::RCSYS);
-                    }
-                    _ => {}
-                }
-
                 // Configure and turn on RC1M
                 configure_1mhz_rc();
-                // Set Flash wait state to 0 for <= 24MHz in PS2
-                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
                 // Change the system clock to RC1M
                 select_main_clock(MainClock::RC1M);
+                // Set Flash wait state to 0 for <= 24MHz in PS2
+                flashcalw::FLASH_CONTROLLER.set_wait_state(0);
             }
         }
 
@@ -832,7 +804,7 @@ impl PowerManager {
     // the previous system clock
     pub unsafe fn change_system_clock(&self, clock_source: SystemClockSource) {
         // If the clock you want to switch to is the current system clock, do nothing
-        let prev_clock_source = PM.system_clock_source.get();
+        let prev_clock_source = self.system_clock_source.get();
         if prev_clock_source == clock_source {
             return;
         }
@@ -991,21 +963,45 @@ unsafe fn configure_1mhz_rc() {
 pub fn get_system_frequency() -> u32 {
     // Return the current system frequency
     unsafe {
-        match PM.system_clock_source.get() {
-            SystemClockSource::RcsysAt115kHz => 115200,
-            SystemClockSource::DfllRc32kAt48MHz => 48000000,
-            SystemClockSource::ExternalOscillator { .. } => 16000000,
-            SystemClockSource::PllExternalOscillatorAt48MHz { .. } => 48000000,
-            SystemClockSource::RC80M => 40000000,
-            SystemClockSource::RCFAST { frequency } => match frequency {
-                RcfastFrequency::Frequency4MHz => 4300000,
-                RcfastFrequency::Frequency8MHz => 8200000,
-                RcfastFrequency::Frequency12MHz => 12000000,
-            },
-            SystemClockSource::RC1M => 1000000,
-        }
+        get_clock_frequency(PM.system_clock_source.get())
     }
 }
+
+pub fn get_clock_frequency(clock: SystemClockSource) -> u32 {
+    match clock {
+        SystemClockSource::RcsysAt115kHz => 115200,
+        SystemClockSource::DfllRc32kAt48MHz => 48000000,
+        SystemClockSource::ExternalOscillator { .. } => 16000000,
+        SystemClockSource::PllExternalOscillatorAt48MHz { .. } => 48000000,
+        SystemClockSource::RC80M => 40000000,
+        SystemClockSource::RCFAST { frequency } => match frequency {
+            RcfastFrequency::Frequency4MHz => 4300000,
+            RcfastFrequency::Frequency8MHz => 8200000,
+            RcfastFrequency::Frequency12MHz => 12000000,
+        },
+        SystemClockSource::RC1M => 1000000,
+    }
+}
+
+//pub fn get_clock_frequency(clock_source: SystemClockSource) -> u32 {
+//    let freq = match clock_source {
+//        SystemClockSource::RcsysAt115kHz => 115200,
+//        SystemClockSource::ExternalOscillator { frequency, startup_mode } => 16000000,
+//        SystemClockSource::PllExternalOscillatorAt48MHz { frequency, startup_mode } => 48000000,
+//        SystemClockSource::DfllRc32kAt48MHz => 48000000,
+//        SystemClockSource::RC80M => 40000000,
+//        SystemClockSource::RCFAST {frequency} => {
+//            match frequency {
+//                RcfastFrequency::Frequency4MHz => 4300000,
+//                RcfastFrequency::Frequency8MHz => 8200000,
+//                RcfastFrequency::Frequency12MHz => 12000000,
+//            }
+//        }
+//        SystemClockSource::RC1M => 1000000,
+//    };
+//    freq
+//    
+//}
 
 /// Utility macro to modify clock mask registers
 ///
@@ -1098,6 +1094,7 @@ pub fn deep_sleep_ready() -> bool {
     let pba = PM_REGS.pbamask.get() & !deep_sleep_pbamask.mask() == 0;
     let pbb = PM_REGS.pbbmask.get() & !deep_sleep_pbbmask.mask() == 0;
     let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) == 0;
+
     hsb && pba && pbb && gpio
 }
 

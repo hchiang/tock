@@ -31,6 +31,8 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
+use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use crate::clock_pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
 #[repr(C)]
@@ -409,6 +411,8 @@ pub struct FLASHCALW {
     client: OptionalCell<&'static hil::flash::Client<FLASHCALW>>,
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
+
+    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
 }
 
 // static instance for the board. Only one FLASHCALW on chip.
@@ -449,6 +453,7 @@ impl FLASHCALW {
             client: OptionalCell::empty(),
             current_state: Cell::new(FlashState::Unconfigured),
             buffer: TakeCell::empty(),
+            client_index: OptionalCell::empty(),
         }
     }
 
@@ -483,6 +488,19 @@ impl FLASHCALW {
     fn pico_enabled(&self) -> bool {
         let regs: &FlashcalwRegisters = &*self.registers;
         regs.sr.is_set(PicoCacheStatus::CSTS)
+    }
+
+    fn get_client_index(&self) {
+        unsafe {
+        let regval = clock_pm::CM.register(&FLASH_CONTROLLER);
+        match regval {
+            Ok(client_index) => {
+                self.client_index.set(client_index);
+                clock_pm::CM.set_need_lock(client_index, false);
+            }
+            Err(_e) => {} 
+        }
+        }
     }
 
     pub fn handle_interrupt(&self) {
@@ -526,6 +544,12 @@ impl FLASHCALW {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
+                self.client_index.map( |client_index|
+                    unsafe {
+                        clock_pm::CM.disable_clock(client_index)
+                    }
+                );
+
                 self.client.map(|client| {
                     self.buffer.take().map(|buffer| {
                         client.read_complete(buffer, hil::flash::Error::CommandComplete);
@@ -533,6 +557,16 @@ impl FLASHCALW {
                 });
             }
             FlashState::WriteUnlocking { page } => {
+                if self.client_index.is_none() {
+                    self.get_client_index();
+                }
+                self.client_index.map( |client_index|
+                    unsafe {
+                        clock_pm::CM.set_preferred(client_index, 0x04);
+                        clock_pm::CM.enable_clock(client_index)
+                    }
+                );
+
                 self.current_state
                     .set(FlashState::WriteErasing { page: page });
                 self.flashcalw_erase_page(page);
@@ -554,6 +588,12 @@ impl FLASHCALW {
 
                 self.current_state.set(FlashState::Ready);
 
+                self.client_index.map( |client_index|
+                    unsafe {
+                        clock_pm::CM.disable_clock(client_index)
+                    }
+                );
+
                 self.client.map(|client| {
                     self.buffer.take().map(|buffer| {
                         client.write_complete(buffer, hil::flash::Error::CommandComplete);
@@ -561,11 +601,26 @@ impl FLASHCALW {
                 });
             }
             FlashState::EraseUnlocking { page } => {
+                if self.client_index.is_none() {
+                    self.get_client_index();
+                }
+                self.client_index.map( |client_index|
+                    unsafe {
+                        clock_pm::CM.set_preferred(client_index, 0x04);
+                        clock_pm::CM.enable_clock(client_index)
+                    }
+                );
                 self.current_state.set(FlashState::EraseErasing);
                 self.flashcalw_erase_page(page);
             }
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
+
+                self.client_index.map( |client_index|
+                    unsafe {
+                        clock_pm::CM.disable_clock(client_index)
+                    }
+                );
 
                 self.client.map(|client| {
                     client.erase_complete(hil::flash::Error::CommandComplete);
@@ -864,6 +919,16 @@ impl FLASHCALW {
         // Hold on to the buffer for the callback.
         self.buffer.replace(buffer);
 
+        if self.client_index.is_none() {
+            self.get_client_index();
+        }
+        self.client_index.map( |client_index|
+            unsafe {
+                clock_pm::CM.set_preferred(client_index, 0x80);
+                clock_pm::CM.enable_clock(client_index);
+            }
+        );
+
         // This is kind of strange, but because read() in this case is
         // synchronous, we still need to schedule as if we had an interrupt so
         // we can allow this function to return and then call the callback.
@@ -927,3 +992,10 @@ impl hil::flash::Flash for FLASHCALW {
         self.erase_page(page_number as i32)
     }
 }
+
+impl hil::clock_pm::ClockClient for FLASHCALW {
+    fn configure_clock(&self, frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+
