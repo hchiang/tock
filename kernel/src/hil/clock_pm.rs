@@ -36,6 +36,10 @@ pub trait ClockClient {
 //    pub fn set_has_lock(&self, lock: bool) { self.lock.set(lock); }
 //}
 
+pub trait ChangeClock {
+    fn change_clock(&self);
+}
+
 pub trait ClockManager {
     //TODO how to make this visible to ClockClients as well?
     type ClientIndex;

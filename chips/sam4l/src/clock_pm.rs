@@ -352,6 +352,14 @@ impl ImixClockManager {
     }
 }
 
+impl ChangeClock for ImixClockManager {
+    fn change_clock(&self) {
+        if self.change_clock.get() && self.lock_count.get() == 0 {
+            self.update_clock();
+        }
+    }
+}
+
 impl ClockManager for ImixClockManager {
     type ClientIndex = ImixClientIndex;
 
