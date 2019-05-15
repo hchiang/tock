@@ -17,6 +17,7 @@ use crate::sched::Kernel;
 use crate::syscall::{self, Syscall, UserspaceKernelBoundary};
 use crate::tbfheader;
 use core::cmp::max;
+use crate::hil::clock_pm::{ClockManager};
 
 /// Helper function to load processes from flash into an array of active
 /// processes. This is the default template for loading processes, but a board
@@ -95,6 +96,10 @@ pub trait ProcessType {
     /// Returns the current state the process is in. Common states are "running"
     /// or "yielded".
     fn get_state(&self) -> State;
+
+    /// Get and set clock manager of the process
+    //fn set_clock_manager(&self, new_CM : &ClockManager<ClientIndex = usize>);
+    fn get_clock_manager(&self) -> &ClockManager<ClientIndex = usize>;
 
     /// Move this process from the running state to the yielded state.
     fn set_yielded_state(&self);
@@ -472,6 +477,9 @@ pub struct Process<'a, C: 'static + Chip> {
 
     /// Values kept so that we can print useful debug messages when apps fault.
     debug: MapCell<ProcessDebug>,
+
+    /// reference to the Clock Manager
+    CM: &'a ClockManager<ClientIndex = usize>,
 }
 
 impl<C: Chip> ProcessType for Process<'a, C> {
@@ -505,11 +513,20 @@ impl<C: Chip> ProcessType for Process<'a, C> {
         self.state.get()
     }
 
+    /*
+    fn set_clock_manager(&self, new_CM : &ClockManager<ClientIndex = usize>) {
+        self.CM = &'a new_CM;
+    }
+    */
+
+    fn get_clock_manager(&self) -> &ClockManager<ClientIndex = usize> {
+        self.CM
+    }
+
     fn set_yielded_state(&self) {
         if self.state.get() == State::Running {
             self.state.set(State::Yielded);
             self.kernel.decrement_work();
-            // TODO (Sicheng) Run force_clock_change() to set the clock
         }
     }
 

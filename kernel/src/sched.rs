@@ -15,6 +15,7 @@ use crate::platform::{Chip, Platform};
 use crate::process::{self, Task};
 use crate::returncode::ReturnCode;
 use crate::syscall::{ContextSwitchReason, Syscall};
+use crate::hil::clock_pm;
 
 /// The time a process is permitted to run before being pre-empted
 const KERNEL_TICK_DURATION_US: u32 = 10000;
@@ -262,6 +263,7 @@ impl Kernel {
 
             if yieldsystick.overflowed() {
                 // TODO (Sicheng) Run force_clock_change() to set the clock
+                process.get_clock_manager().force_clock_update();
                 break;
             }
 
@@ -294,6 +296,8 @@ impl Kernel {
                                     process.set_syscall_return_value(res.into());
                                 }
                                 Some(Syscall::YIELD) => {
+                                    // TODO (Sicheng) Run force_clock_change() to set the clock
+                                    process.get_clock_manager().force_clock_update(); 
                                     process.set_yielded_state();
                                     process.pop_syscall_stack_frame();
 
