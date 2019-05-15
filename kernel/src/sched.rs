@@ -20,6 +20,8 @@ use crate::syscall::{ContextSwitchReason, Syscall};
 const KERNEL_TICK_DURATION_US: u32 = 10000;
 /// Skip re-scheduling a process if its quanta is nearly exhausted
 const MIN_QUANTA_THRESHOLD_US: u32 = 500;
+/// The time a process can run before updating its clock
+const CLOCK_UPDATE_MAX_QUANTA: u32 = 2000;
 
 /// Main object for the kernel. Each board will need to create one.
 pub struct Kernel {
@@ -242,6 +244,12 @@ impl Kernel {
         systick.set_timer(KERNEL_TICK_DURATION_US);
         systick.enable(false);
 
+        // Create another system timer to time when clock should be updated 
+        let yieldsystick = chip.systick();
+        yieldsystick.reset(); 
+        yieldsystick.set_timer(CLOCK_UPDATE_MAX_QUANTA);
+        yieldsystick.enable(false);
+
         loop {
             if chip.has_pending_interrupts() {
                 break;
@@ -249,6 +257,11 @@ impl Kernel {
 
             if systick.overflowed() || !systick.greater_than(MIN_QUANTA_THRESHOLD_US) {
                 process.debug_timeslice_expired();
+                break;
+            }
+
+            if yieldsystick.overflowed() {
+                // TODO (Sicheng) Run force_clock_change() to set the clock
                 break;
             }
 
@@ -260,8 +273,10 @@ impl Kernel {
                     process.setup_mpu();
                     chip.mpu().enable_mpu();
                     systick.enable(true);
+                    yieldsystick.enable(true);
                     let context_switch_reason = process.switch_to();
                     systick.enable(false);
+                    yieldsystick.enable(false);
                     chip.mpu().disable_mpu();
 
                     // Now the process has returned back to the kernel. Check
@@ -408,5 +423,6 @@ impl Kernel {
             }
         }
         systick.reset();
+        yieldsystick.reset();
     }
 }

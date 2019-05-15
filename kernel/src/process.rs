@@ -509,6 +509,7 @@ impl<C: Chip> ProcessType for Process<'a, C> {
         if self.state.get() == State::Running {
             self.state.set(State::Yielded);
             self.kernel.decrement_work();
+            // TODO (Sicheng) Run force_clock_change() to set the clock
         }
     }
 

@@ -235,7 +235,16 @@ impl ImixClockManager {
         return system_clock;
     }
 
+    /* - Function changed to return immediately if change_clock is false 
+     * - Function now called every time a process calls 'yield' and every 
+     *   several thousand ticks
+     */
     fn update_clock(&self) {
+
+        // new 
+        if self.change_clock.get() == false {
+            return; 
+        }
         self.change_clock.set(false);
 
         // Find a compatible clock
@@ -365,8 +374,24 @@ impl ClockManager for ImixClockManager {
         self.num_clients.set(num_clients+1);
         return Ok(retval);
     }
+
+    fn force_clock_update(&self) -> Result<u32, ReturnCode> {
+        self.update_clock();
+        return Ok(pm::get_system_frequency());
+    }
     
+    /* Changed function to signal needing change and not performing
+     * the change until the explicit update_clock function is called
+     * later, either by yield or by a scheduling quanta.
+     */
     fn enable_clock(&self, cidx:&'static Self::ClientIndex) -> Result<u32, ReturnCode> {
+
+        self.change_clock.set(true);
+        let client_index = cidx.get_index();
+        self.clients[client_index].set_enabled(true);
+        return Ok(pm::get_system_frequency());
+
+        /*
         let client_index = cidx.get_index();
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
@@ -415,9 +440,9 @@ impl ClockManager for ImixClockManager {
         }
         else {
              self.change_clockmask.set(next_clockmask);
-
         }
         return Ok(pm::get_system_frequency());
+        */
     }
 
     fn disable_clock(&self, cidx:&'static Self::ClientIndex) -> ReturnCode {

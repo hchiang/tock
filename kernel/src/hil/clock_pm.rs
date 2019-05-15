@@ -41,6 +41,7 @@ pub trait ClockManager {
     type ClientIndex;
 
     fn register(&self, c:&'static ClockClient) -> Result<&'static Self::ClientIndex, ReturnCode>;
+    fn force_clock_update(&self) -> Result<u32, ReturnCode>;
     fn enable_clock(&self, client_index:&'static Self::ClientIndex) -> Result<u32, ReturnCode>;
     fn disable_clock(&self, client_index:&'static Self::ClientIndex) -> ReturnCode;
 
