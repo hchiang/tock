@@ -263,7 +263,6 @@ impl Kernel {
 
             if yieldsystick.overflowed() {
                 // TODO (Sicheng) Run force_clock_change() to set the clock
-                process.get_clock_manager().force_clock_update();
                 break;
             }
 
@@ -297,7 +296,6 @@ impl Kernel {
                                 }
                                 Some(Syscall::YIELD) => {
                                     // TODO (Sicheng) Run force_clock_change() to set the clock
-                                    process.get_clock_manager().force_clock_update(); 
                                     process.set_yielded_state();
                                     process.pop_syscall_stack_frame();
 
