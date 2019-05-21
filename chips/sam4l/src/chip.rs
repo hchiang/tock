@@ -20,6 +20,8 @@ use crate::usbc;
 use cortexm4;
 use kernel::common::deferred_call;
 use kernel::Chip;
+use crate::clock_pm;
+use kernel::hil::clock_pm::{ClockManager};
 
 pub struct Sam4l {
     mpu: cortexm4::mpu::MPU,
@@ -73,6 +75,12 @@ impl Chip for Sam4l {
     type MPU = cortexm4::mpu::MPU;
     type UserspaceKernelBoundary = cortexm4::syscall::SysCall;
     type SysTick = cortexm4::systick::SysTick;
+
+    fn call_clock_manager(&self) {
+        unsafe{
+            &clock_pm::CM.force_clock_update();
+        }
+    }
 
     fn service_pending_interrupts(&self) {
         unsafe {

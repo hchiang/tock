@@ -262,7 +262,11 @@ impl Kernel {
             }
 
             if yieldsystick.overflowed() {
-                // TODO (Sicheng) Run force_clock_change() to set the clock
+
+                // Run force_clock_change() to set the clock
+                chip.call_clock_manager(); 
+                //println!("called clock manager after a timeout!"); 
+
                 break;
             }
 
@@ -295,7 +299,11 @@ impl Kernel {
                                     process.set_syscall_return_value(res.into());
                                 }
                                 Some(Syscall::YIELD) => {
-                                    // TODO (Sicheng) Run force_clock_change() to set the clock
+
+                                    // Run force_clock_change() to set the clock
+                                    chip.call_clock_manager();
+                                    //println!("called clock manager after a yield!"); 
+
                                     process.set_yielded_state();
                                     process.pop_syscall_stack_frame();
 

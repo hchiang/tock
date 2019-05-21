@@ -2,6 +2,7 @@
 
 use crate::driver::Driver;
 use crate::syscall;
+use crate::hil::clock_pm::{ClockManager};
 
 pub mod mpu;
 crate mod systick;
@@ -21,6 +22,7 @@ pub trait Chip {
     type UserspaceKernelBoundary: syscall::UserspaceKernelBoundary;
     type SysTick: systick::SysTick;
 
+    fn call_clock_manager(&self);
     fn service_pending_interrupts(&self);
     fn has_pending_interrupts(&self) -> bool;
     fn mpu(&self) -> &Self::MPU;
