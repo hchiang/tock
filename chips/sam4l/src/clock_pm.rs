@@ -153,8 +153,8 @@ impl ClockData {
     fn set_max_freq(&self, max_freq: u32) {
         self.max_freq.set(max_freq);
     }
-    fn set_preferred(&self, max_freq: u32) {
-        self.preferred.set(max_freq);
+    fn set_preferred(&self, preferred: u32) {
+        self.preferred.set(preferred);
     }
 }
 
@@ -291,6 +291,7 @@ impl ImixClockManager {
         self.current_clock.set(clock);
 
         // Change the clock
+/*
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
             let system_freq = pm::get_clock_frequency(system_clock);
@@ -313,7 +314,7 @@ impl ImixClockManager {
                 } 
             }
         }
-
+*/
         // Increment lock to prevent recursive calls to update_clock
         self.lock_count.set(self.lock_count.get()+1);
         for i in 0..self.num_clients.get() { 
@@ -495,13 +496,13 @@ impl ClockManager for ImixClockManager {
         return ReturnCode::SUCCESS;
     }
 
-    fn set_preferred(&self, cidx:&'static Self::ClientIndex, max_freq: u32) -> 
+    fn set_preferred(&self, cidx:&'static Self::ClientIndex, preferred: u32) -> 
                                                         ReturnCode {
         let client_index = cidx.get_index();
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
-        self.clients[client_index].set_preferred(max_freq);
+        self.clients[client_index].set_preferred(preferred);
         return ReturnCode::SUCCESS;
     }
     
