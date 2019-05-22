@@ -459,8 +459,8 @@ pub unsafe fn reset_handler() {
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
-    rf233.reset();
-    rf233.start();
+    //rf233.reset();
+    //rf233.start();
 
     //imix.pconsole.start();
 
@@ -475,7 +475,7 @@ pub unsafe fn reset_handler() {
     // aes_ccm_test::run();
     // aes_test::run_aes128_ctr();
     // aes_test::run_aes128_cbc();
-
+/*
     let client_idx = sam4l::clock_pm::CM.register(&Dummy).unwrap();
     let cycles = cortexm4::dwt::bench(|| {
         sam4l::clock_pm::CM.enable_clock(client_idx);
@@ -489,7 +489,7 @@ pub unsafe fn reset_handler() {
     let cycles = cortexm4::dwt::bench(|| {
     });
     debug!("nop bench: {}", cycles);
-
+*/
     debug!("Initialization complete. Entering main loop");
 
     extern "C" {

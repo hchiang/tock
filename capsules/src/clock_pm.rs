@@ -1,7 +1,6 @@
 use kernel::{AppId, Callback, Driver, ReturnCode};
 use kernel::hil::clock_pm::{ChangeClock};
 
-
 pub struct ClockCM<'a, C:ChangeClock> {
     clock_manager: &'a C,
 }
@@ -31,7 +30,7 @@ impl<C: ChangeClock> Driver for ClockCM<'a, C> {
     fn command(&self, command_num: usize, clock: usize, _: usize, _: AppId) -> ReturnCode {
         match command_num {
             // number of pins
-            0 => {
+            1 => {
                 self.clock_manager.change_clock();
                 ReturnCode::SUCCESS
             },
