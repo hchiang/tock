@@ -3,7 +3,6 @@ use kernel::common::cells::OptionalCell;
 use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
 use crate::pm;
-use kernel::debug;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
@@ -17,7 +16,8 @@ const EXTOSC: u32       = 0x040;
 const RC80M: u32        = 0x080;
 const DFLL: u32         = 0x100; 
 const PLL: u32          = 0x200; 
-const ALLCLOCKS: u32    = 0x3ff;
+const ALLCLOCKS: u32    = 0x3fe;
+const DEFAULT: u32      = 0x3ff;
 
 const IO_MODE: u32      = 0x0;
 const CPU_MODE: u32     = 0x1;
@@ -236,37 +236,35 @@ impl ImixClockManager {
     }
 
     fn update_clock(&self) {
+        // Increment lock to prevent recursive calls to update_clock
+        self.lock_count.set(self.lock_count.get()+1);
         self.change_clock.set(false);
 
         // Find a compatible clock
         let mut clockmask = self.nolock_clockmask.get();
-        let mut change_clockmask = ALLCLOCKS;
+        let mut change_clockmask = DEFAULT;
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
         let mut preferred = 0;
         for _i in 0..self.num_clients.get() { 
-            if !self.clients[next_client].get_enabled() {
-                next_client += 1;
-                if next_client >= self.num_clients.get() {
-                    next_client = 0;
-                }
-                continue;
-            }
-            let next_clockmask = clockmask & 
-                                self.clients[next_client].get_clockmask();
-            if next_clockmask == 0 {
-                if set_next_client == false {
-                    set_next_client = true;
-                    self.next_client.set(next_client);
-                    self.change_clock.set(true);
-                }
-                let new_change_clockmask = change_clockmask & 
+            if self.clients[next_client].get_enabled() {
+            
+                let next_clockmask = clockmask & 
                                     self.clients[next_client].get_clockmask();
-                change_clockmask = new_change_clockmask;
-            }
-            else {
-                clockmask = next_clockmask;
-                preferred |= self.clients[next_client].get_preferred();
+                if next_clockmask == 0 {
+                    if set_next_client == false {
+                        set_next_client = true;
+                        self.next_client.set(next_client);
+                        self.change_clock.set(true);
+                    }
+                    let new_change_clockmask = change_clockmask & 
+                                        self.clients[next_client].get_clockmask();
+                    change_clockmask = new_change_clockmask;
+                }
+                else {
+                    clockmask = next_clockmask;
+                    preferred |= self.clients[next_client].get_preferred();
+                }
             }
             
             next_client += 1;
@@ -291,7 +289,6 @@ impl ImixClockManager {
         self.current_clock.set(clock);
 
         // Change the clock
-/*
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
             let system_freq = pm::get_clock_frequency(system_clock);
@@ -314,9 +311,7 @@ impl ImixClockManager {
                 } 
             }
         }
-*/
-        // Increment lock to prevent recursive calls to update_clock
-        self.lock_count.set(self.lock_count.get()+1);
+
         for i in 0..self.num_clients.get() { 
             if !self.clients[i].get_enabled() {
                 continue;
@@ -439,7 +434,7 @@ impl ClockManager for ImixClockManager {
             // When a lock free client calls disable clock, recalculate 
             // nolock_clockmask
             let num_clients = self.num_clients.get();
-            let mut new_clockmask = ALLCLOCKS;
+            let mut new_clockmask = DEFAULT;
             for i in 0..num_clients { 
                 if !self.clients[i].get_need_lock() &&
                         self.clients[i].get_running() {
@@ -571,7 +566,7 @@ pub static mut CM: ImixClockManager = ImixClockManager {
     current_clock: Cell::new(0),
     change_clock: Cell::new(false),
     lock_count: Cell::new(0),
-    change_clockmask: Cell::new(ALLCLOCKS),
-    nolock_clockmask: Cell::new(ALLCLOCKS),
+    change_clockmask: Cell::new(DEFAULT),
+    nolock_clockmask: Cell::new(DEFAULT),
 };
 

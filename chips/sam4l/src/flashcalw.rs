@@ -355,9 +355,11 @@ enum FlashState {
     Ready,                        // Flash is ready to complete a command.
     Read,                         // Performing a read operation.
     WriteUnlocking { page: i32 }, // Started a write operation.
+    WriteUnlocking2 { page: i32 }, // Started a write operation.
     WriteErasing { page: i32 },   // Waiting on the page to erase.
     WriteWriting,                 // Waiting on the page to actually be written.
     EraseUnlocking { page: i32 }, // Started an erase operation.
+    EraseUnlocking2 { page: i32 }, // Started an erase operation.
     EraseErasing,                 // Waiting on the erase to finish.
 }
 
@@ -557,6 +559,9 @@ impl FLASHCALW {
                 });
             }
             FlashState::WriteUnlocking { page } => {
+                self.current_state
+                    .set(FlashState::WriteUnlocking2 { page: page });
+
                 if self.client_index.is_none() {
                     self.get_client_index();
                 }
@@ -566,7 +571,8 @@ impl FLASHCALW {
                         clock_pm::CM.enable_clock(client_index)
                     }
                 );
-
+            }
+            FlashState::WriteUnlocking2 { page } => {
                 self.current_state
                     .set(FlashState::WriteErasing { page: page });
                 self.flashcalw_erase_page(page);
@@ -601,6 +607,8 @@ impl FLASHCALW {
                 });
             }
             FlashState::EraseUnlocking { page } => {
+                self.current_state.set(FlashState::EraseUnlocking2 { page: page});
+
                 if self.client_index.is_none() {
                     self.get_client_index();
                 }
@@ -610,6 +618,8 @@ impl FLASHCALW {
                         clock_pm::CM.enable_clock(client_index)
                     }
                 );
+            }
+            FlashState::EraseUnlocking2 { page } => {
                 self.current_state.set(FlashState::EraseErasing);
                 self.flashcalw_erase_page(page);
             }
@@ -995,7 +1005,12 @@ impl hil::flash::Flash for FLASHCALW {
 
 impl hil::clock_pm::ClockClient for FLASHCALW {
     fn configure_clock(&self, frequency: u32) {}
-    fn clock_enabled(&self) {}
+    fn clock_enabled(&self) {
+        match self.current_state.get() {
+            FlashState::WriteUnlocking2{..} | FlashState::EraseUnlocking2{..} => self.handle_interrupt(),
+            _ => {}
+        }
+    }
     fn clock_disabled(&self) {}
 }
 
