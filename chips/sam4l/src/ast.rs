@@ -8,7 +8,7 @@ use crate::pm::{self, PBDClock};
 use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
-use kernel::hil::time::{self, Alarm, Freq16KHz, Time};
+use kernel::hil::time::{self, Alarm, Freq1KHz, Time};
 use kernel::hil::Controller;
 
 /// Minimum number of clock tics to make sure ALARM0 register is synchronized
@@ -184,7 +184,7 @@ impl Controller for Ast<'a> {
         self.select_clock(Clock::ClockOsc32);
         self.disable();
         self.disable_alarm_irq();
-        self.set_prescalar(0); // 32KHz / (2^(0 + 1)) = 16KHz
+        self.set_prescalar(4); // 32KHz / (2^(4 + 1)) = 1KHz
         self.enable_alarm_wake();
         self.clear_alarm();
     }
@@ -303,7 +303,7 @@ impl Ast<'a> {
 }
 
 impl Time for Ast<'a> {
-    type Frequency = Freq16KHz;
+    type Frequency = Freq1KHz;
 
     fn disable(&self) {
         self.disable_alarm_irq();
