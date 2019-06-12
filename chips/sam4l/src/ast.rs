@@ -210,6 +210,12 @@ impl Ast<'a> {
         self.callback.set(client);
     }
 
+    pub fn is_irq_enabled(&self) -> bool {
+        let regs: &AstRegisters = &*self.registers;
+        while self.busy() {}
+        regs.imr.is_set(Interrupt::ALARM0)
+    }
+
     fn busy(&self) -> bool {
         let regs: &AstRegisters = &*self.registers;
         regs.sr.is_set(Status::BUSY)

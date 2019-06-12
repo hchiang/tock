@@ -294,6 +294,7 @@ impl ImixClockManager {
         if clock_changed {
             let system_clock = self.convert_to_clock(clock);
             let system_freq = pm::get_clock_frequency(system_clock);
+            //let system_freq = pm::get_system_frequency();
             let old_system_freq = pm::get_system_frequency();
             if old_system_freq < system_freq {
                 for i in 0..self.num_clients.get() { 
