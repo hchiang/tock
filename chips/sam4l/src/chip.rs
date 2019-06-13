@@ -175,10 +175,15 @@ impl Chip for Sam4l {
     fn sleep(&self) {
         unsafe {
             if ast::AST.is_irq_enabled() {
-                debug_gpio!(0,toggle);
+                debug_gpio!(0,set);
             }
             else {
-                debug_gpio!(1,toggle);
+                debug_gpio!(0,clear);
+            }
+            if ast::AST.is_alarm_enabled() {
+                debug_gpio!(1,set);
+            } else {
+                debug_gpio!(1,clear);
             }
         }
         if pm::deep_sleep_ready() {

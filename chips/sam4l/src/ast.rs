@@ -10,6 +10,7 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil::time::{self, Alarm, Freq1KHz, Time};
 use kernel::hil::Controller;
+use kernel::debug;
 
 /// Minimum number of clock tics to make sure ALARM0 register is synchronized
 ///
@@ -249,6 +250,7 @@ impl Ast<'a> {
 
     /// Enables the AST registers
     fn enable(&self) {
+        debug!("AST: enable");
         let regs: &AstRegisters = &*self.registers;
         while self.busy() {}
         regs.cr.modify(Control::EN::SET);
@@ -257,6 +259,7 @@ impl Ast<'a> {
 
     /// Disable the AST registers
     fn disable(&self) {
+        debug!("AST: disable");
         let regs: &AstRegisters = &*self.registers;
         while self.busy() {}
         regs.cr.modify(Control::EN::CLEAR);
@@ -264,7 +267,7 @@ impl Ast<'a> {
     }
 
     /// Returns if an alarm is currently set
-    fn is_alarm_enabled(&self) -> bool {
+    pub fn is_alarm_enabled(&self) -> bool {
         let regs: &AstRegisters = &*self.registers;
         while self.busy() {}
         regs.sr.is_set(Status::ALARM0)
@@ -335,6 +338,7 @@ impl Alarm for Ast<'a> {
 
         while self.busy() {}
         regs.ar0.write(Value::VALUE.val(tics));
+        debug!("AST: {}, {}.", now, tics);
         while self.busy() {}
         self.enable_alarm_irq();
         self.enable();
