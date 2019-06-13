@@ -10,6 +10,8 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil::time::{self, Alarm, Freq1KHz, Time};
 use kernel::hil::Controller;
+use crate::clock_pm;
+use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use kernel::debug;
 
 /// Minimum number of clock tics to make sure ALARM0 register is synchronized
@@ -168,11 +170,13 @@ const AST_ADDRESS: StaticRef<AstRegisters> =
 pub struct Ast<'a> {
     registers: StaticRef<AstRegisters>,
     callback: OptionalCell<&'a time::Client>,
+    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
 }
 
 pub static mut AST: Ast<'static> = Ast {
     registers: AST_ADDRESS,
     callback: OptionalCell::empty(),
+    client_index: OptionalCell::empty(),
 };
 
 impl Controller for Ast<'a> {
@@ -188,6 +192,19 @@ impl Controller for Ast<'a> {
         self.set_prescalar(4); // 32KHz / (2^(4 + 1)) = 1KHz
         self.enable_alarm_wake();
         self.clear_alarm();
+
+        if self.client_index.is_none() {
+            unsafe {
+            let regval = clock_pm::CM.register(&AST); 
+            match regval {
+                Ok(client_index) => {
+                    self.client_index.set(client_index);
+                    clock_pm::CM.set_need_lock(client_index, false);
+                }
+                Err(_e) => {} 
+            }
+            }
+        }
     }
 }
 
@@ -281,11 +298,21 @@ impl Ast<'a> {
     }
 
     fn enable_alarm_irq(&self) {
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.enable_clock(client_index)
+            }
+        );
         let regs: &AstRegisters = &*self.registers;
         regs.ier.write(Interrupt::ALARM0::SET);
     }
 
     fn disable_alarm_irq(&self) {
+        self.client_index.map( |client_index|
+            unsafe {
+            clock_pm::CM.disable_clock(client_index)
+            }
+        );
         let regs: &AstRegisters = &*self.registers;
         regs.idr.write(Interrupt::ALARM0::SET);
     }
@@ -349,4 +376,16 @@ impl Alarm for Ast<'a> {
         while self.busy() {}
         regs.ar0.read(Value::VALUE)
     }
+}
+
+impl ClockClient for Ast<'a> {
+    fn configure_clock(&self, frequency: u32) {}
+    fn clock_enabled(&self) {
+        let regs: &AstRegisters = &*self.registers;
+        let val = regs.ar0.read(Value::VALUE);
+        regs.ar0.write(Value::VALUE.val(val));
+        let now = self.get_counter();
+        debug!("ASTcb: {}, {}.", now, val);
+    }
+    fn clock_disabled(&self) {}
 }
