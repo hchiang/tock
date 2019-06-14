@@ -20,7 +20,6 @@ use crate::usbc;
 use cortexm4;
 use kernel::common::deferred_call;
 use kernel::Chip;
-use kernel::debug_gpio;
 
 pub struct Sam4l {
     mpu: cortexm4::mpu::MPU,
@@ -76,7 +75,6 @@ impl Chip for Sam4l {
     type SysTick = cortexm4::systick::SysTick;
 
     fn service_pending_interrupts(&self) {
-        debug_gpio!(2,toggle);
         unsafe {
             loop {
                 if let Some(task) = deferred_call::DeferredCall::next_pending() {
@@ -173,19 +171,6 @@ impl Chip for Sam4l {
     }
 
     fn sleep(&self) {
-        unsafe {
-            if ast::AST.is_irq_enabled() {
-                debug_gpio!(0,set);
-            }
-            else {
-                debug_gpio!(0,clear);
-            }
-            if ast::AST.is_alarm_enabled() {
-                debug_gpio!(1,set);
-            } else {
-                debug_gpio!(1,clear);
-            }
-        }
         if pm::deep_sleep_ready() {
             unsafe {
                 cortexm4::scb::set_sleepdeep();

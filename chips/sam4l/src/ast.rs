@@ -8,11 +8,10 @@ use crate::pm::{self, PBDClock};
 use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
-use kernel::hil::time::{self, Alarm, Freq1KHz, Time};
+use kernel::hil::time::{self, Alarm, Freq16KHz, Time};
 use kernel::hil::Controller;
 use crate::clock_pm;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
-use kernel::debug;
 
 /// Minimum number of clock tics to make sure ALARM0 register is synchronized
 ///
@@ -189,7 +188,7 @@ impl Controller for Ast<'a> {
         self.select_clock(Clock::ClockOsc32);
         self.disable();
         self.disable_alarm_irq();
-        self.set_prescalar(4); // 32KHz / (2^(4 + 1)) = 1KHz
+        self.set_prescalar(0); // 32KHz / (2^(0 + 1)) = 16KHz
         self.enable_alarm_wake();
         self.clear_alarm();
 
@@ -267,7 +266,6 @@ impl Ast<'a> {
 
     /// Enables the AST registers
     fn enable(&self) {
-        debug!("AST: enable");
         let regs: &AstRegisters = &*self.registers;
         while self.busy() {}
         regs.cr.modify(Control::EN::SET);
@@ -276,7 +274,6 @@ impl Ast<'a> {
 
     /// Disable the AST registers
     fn disable(&self) {
-        debug!("AST: disable");
         let regs: &AstRegisters = &*self.registers;
         while self.busy() {}
         regs.cr.modify(Control::EN::CLEAR);
@@ -339,7 +336,7 @@ impl Ast<'a> {
 }
 
 impl Time for Ast<'a> {
-    type Frequency = Freq1KHz;
+    type Frequency = Freq16KHz;
 
     fn disable(&self) {
         self.disable_alarm_irq();
@@ -365,7 +362,6 @@ impl Alarm for Ast<'a> {
 
         while self.busy() {}
         regs.ar0.write(Value::VALUE.val(tics));
-        debug!("AST: {}, {}.", now, tics);
         while self.busy() {}
         self.enable_alarm_irq();
         self.enable();
@@ -381,11 +377,10 @@ impl Alarm for Ast<'a> {
 impl ClockClient for Ast<'a> {
     fn configure_clock(&self, frequency: u32) {}
     fn clock_enabled(&self) {
-        let regs: &AstRegisters = &*self.registers;
-        let val = regs.ar0.read(Value::VALUE);
-        regs.ar0.write(Value::VALUE.val(val));
-        let now = self.get_counter();
-        debug!("ASTcb: {}, {}.", now, val);
+        while self.busy() {}
+        self.disable_alarm_irq();
+        while self.busy() {}
+        self.enable_alarm_irq();
     }
     fn clock_disabled(&self) {}
 }
