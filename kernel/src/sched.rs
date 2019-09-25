@@ -351,6 +351,8 @@ impl Kernel {
                         }
                         Some(ContextSwitchReason::TimesliceExpired) => {
                             // break to handle other processes.
+                            //TODO switch to higher clock here
+                            //systick.set_hertz(get_freq)
                             break;
                         }
                         Some(ContextSwitchReason::Interrupted) => {
@@ -365,29 +367,33 @@ impl Kernel {
                         }
                     }
                 }
-                process::State::Yielded => match process.dequeue_task() {
-                    // If the process is yielded it might be waiting for a
-                    // callback. If there is a task scheduled for this process
-                    // go ahead and set the process to execute it.
-                    None => break,
-                    Some(cb) => match cb {
-                        Task::FunctionCall(ccb) => {
-                            process.push_function_call(ccb);
-                        }
-                        Task::IPC((otherapp, ipc_type)) => {
-                            ipc.map_or_else(
-                                || {
-                                    assert!(
-                                        false,
-                                        "Kernel consistency error: IPC Task with no IPC"
-                                    );
-                                },
-                                |ipc| {
-                                    ipc.schedule_callback(appid, otherapp, ipc_type);
-                                },
-                            );
-                        }
-                    },
+                process::State::Yielded => {
+                    //TODO call change_clock here -> have change_clock return new freq
+                    //systick.set_hertz(get_freq)
+                    match process.dequeue_task() {
+                        // If the process is yielded it might be waiting for a
+                        // callback. If there is a task scheduled for this process
+                        // go ahead and set the process to execute it.
+                        None => break,
+                        Some(cb) => match cb {
+                            Task::FunctionCall(ccb) => {
+                                process.push_function_call(ccb);
+                            }
+                            Task::IPC((otherapp, ipc_type)) => {
+                                ipc.map_or_else(
+                                    || {
+                                        assert!(
+                                            false,
+                                            "Kernel consistency error: IPC Task with no IPC"
+                                        );
+                                    },
+                                    |ipc| {
+                                        ipc.schedule_callback(appid, otherapp, ipc_type);
+                                    },
+                                );
+                            }
+                        },
+                    }
                 },
                 process::State::Fault => {
                     // We should never be scheduling a process in fault.

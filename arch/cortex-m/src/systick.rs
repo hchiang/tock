@@ -1,5 +1,6 @@
 //! ARM Cortex-M SysTick peripheral.
 
+use core::cell::Cell;
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite};
 use kernel::common::StaticRef;
 
@@ -52,7 +53,7 @@ register_bitfields![u32,
 ///
 /// Documented in the Cortex-MX Devices Generic User Guide, Chapter 4.4
 pub struct SysTick {
-    hertz: u32,
+    hertz: Cell<u32>,
 }
 
 const BASE_ADDR: *const SystickRegisters = 0xE000E010 as *const SystickRegisters;
@@ -65,7 +66,7 @@ impl SysTick {
     /// Use this constructor if the core implementation has a pre-calibration
     /// value in hardware.
     pub unsafe fn new() -> SysTick {
-        SysTick { hertz: 0 }
+        SysTick { hertz: Cell::new(0) }
     }
 
     /// Initialize the `SysTick` with an explicit clock speed
@@ -77,7 +78,7 @@ impl SysTick {
     ///   if the SysTick is driven by the CPU clock, it is simply the CPU speed.
     pub unsafe fn new_with_calibration(clock_speed: u32) -> SysTick {
         let mut res = SysTick::new();
-        res.hertz = clock_speed;
+        res.hertz.set(clock_speed);
         res
     }
 
@@ -86,8 +87,8 @@ impl SysTick {
     // constructor.
     fn hertz(&self) -> u32 {
         let tenms = SYSTICK_BASE.syst_calib.read(CalibrationValue::TENMS);
-        if tenms == 0 {
-            self.hertz
+        if self.hertz.get() != 0 {
+            self.hertz.get()
         } else {
             // The `tenms` register is the reload value for 10ms, so
             // Hertz = number of tics in 1 second = tenms * 100
@@ -154,5 +155,9 @@ impl kernel::SysTick for SysTick {
                 .syst_csr
                 .write(ControlAndStatus::ENABLE::SET + ControlAndStatus::CLKSOURCE::SET);
         }
+    }
+
+    fn set_hertz(&self, hertz: u32) {
+        self.hertz.set(hertz);
     }
 }
