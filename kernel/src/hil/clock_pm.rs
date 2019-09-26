@@ -37,7 +37,7 @@ pub trait ClockClient {
 //}
 
 pub trait ChangeClock {
-    fn change_clock(&self);
+    fn change_clock(&self) -> Option<u32>;
 }
 
 pub trait ClockManager {

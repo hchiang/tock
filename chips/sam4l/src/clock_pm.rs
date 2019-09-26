@@ -19,9 +19,6 @@ const PLL: u32          = 0x200;
 const ALLCLOCKS: u32    = 0x3fe;
 const DEFAULT: u32      = 0x3ff;
 
-const IO_MODE: u32      = 0x0;
-const CPU_MODE: u32     = 0x1;
-
 pub struct ImixClientIndex {
     client_index: usize,
 }
@@ -169,7 +166,6 @@ pub struct ImixClockManager {
     change_clockmask: Cell<u32>,
     // clockmask of currently running clients that don't need a lock
     nolock_clockmask: Cell<u32>,
-    pending_clock_change: Cell<bool>,
 }
 
 impl ImixClockManager {
@@ -240,7 +236,6 @@ impl ImixClockManager {
         // Increment lock to prevent recursive calls to update_clock
         self.lock_count.set(self.lock_count.get()+1);
         self.change_clock.set(false);
-        self.pending_clock_change.set(false);
 
         // Find a compatible clock
         let mut clockmask = self.nolock_clockmask.get();
@@ -351,13 +346,14 @@ impl ImixClockManager {
 }
 
 impl ChangeClock for ImixClockManager {
-    fn change_clock(&self) {
-        if self.lock_count.get() == 0 && self.change_clock.get() {
-            self.update_clock();
+    fn change_clock(&self) -> Option<u32> {
+        if self.lock_count.get() == 0 {
+            if self.change_clock.get() || self.current_clock.get() != 0x1 {
+                self.update_clock();
+                return Some(pm::get_system_frequency());
+            }
         }
-        else {
-            self.pending_clock_change.set(true);
-        }
+        return None
     }
 }
 
@@ -381,7 +377,6 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         if self.clients[client_index].get_enabled() {
-            self.clients[client_index].client_enabled();
             return Ok(pm::get_system_frequency());
         }
 
@@ -389,22 +384,12 @@ impl ClockManager for ImixClockManager {
         let client_clocks = self.clients[client_index].get_clockmask();
         let next_clockmask = self.change_clockmask.get() & client_clocks;
 
-        self.change_clock.set(true);
-        return Ok(pm::get_system_frequency());
-/*
         // The current clock is incompatible
         // This also captures the case where no peripherals are running
         //      if the peripheral's last bit is not set 
         if client_clocks & self.current_clock.get() == 0 {
-            // Choose what the next clock will be
             self.change_clock.set(true);
-            //if next_clockmask != 0 { 
             self.change_clockmask.set(next_clockmask);
-            //}
-
-            if self.lock_count.get() == 0 && self.pending_clock_change.get() {
-                self.update_clock();
-            }
         }
         // The current clock is compatible and client doesn't need a lock
         else if !self.clients[client_index].get_need_lock() {
@@ -430,7 +415,6 @@ impl ClockManager for ImixClockManager {
 
         }
         return Ok(pm::get_system_frequency());
-*/
     }
 
     fn disable_clock(&self, cidx:&'static Self::ClientIndex) -> ReturnCode {
@@ -462,10 +446,7 @@ impl ClockManager for ImixClockManager {
         }
         //TODO this line basically does nothing right now 
         self.clients[client_index].client_disabled();
-        // Automatically calls update_clock if there are no locks
-        if self.lock_count.get() == 0 && self.pending_clock_change.get() {
-            self.update_clock();
-        }
+
         return ReturnCode::SUCCESS;
     }
 
@@ -585,6 +566,5 @@ pub static mut CM: ImixClockManager = ImixClockManager {
     lock_count: Cell::new(0),
     change_clockmask: Cell::new(DEFAULT),
     nolock_clockmask: Cell::new(DEFAULT),
-    pending_clock_change: Cell::new(false),
 };
 
