@@ -27,7 +27,7 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager};
 use crate::clock_pm;
 
 /// Representation of an ADC channel on the SAM4L.
@@ -1137,10 +1137,10 @@ impl dma::DMAClient for Adc {
     }
 }
 
-impl hil::clock_pm::ClockClient for Adc {
+impl ClockClient for Adc {
     fn configure_clock(&self, frequency: u32) {
         let regs: &AdcRegisters = &*self.registers;
-        let res = self.config_and_enable(self.callback_frequency.get(), frequency);
+        self.config_and_enable(self.callback_frequency.get(), frequency);
     }
     fn clock_enabled(&self) {
         self.sample_highspeed_callback();

@@ -1,5 +1,3 @@
-use core::cell::Cell;
-use tock_cells::optional_cell::OptionalCell;
 use crate::returncode::ReturnCode;
 
 /// Implemented by each peripheral

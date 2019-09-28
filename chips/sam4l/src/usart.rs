@@ -15,7 +15,7 @@ use kernel::ReturnCode;
 
 use crate::dma;
 use crate::pm;
-use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager};
 use crate::clock_pm;
 
 // Register map for SAM4L USART
@@ -1295,7 +1295,7 @@ impl spi::SpiMaster for USART<'a> {
     }
 }
 
-impl hil::clock_pm::ClockClient for USART<'a> {
+impl ClockClient for USART<'a> {
     fn configure_clock(&self, frequency: u32) {
         let usart = &USARTRegManager::new(&self);
         self.set_baud_rate(usart, self.baud_rate.get(), frequency);

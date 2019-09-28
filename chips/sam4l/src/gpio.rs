@@ -7,7 +7,6 @@ use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
-use kernel::ClockInterface;
 use kernel::hil::clock_pm::{ClockClient,ClockManager};
 use crate::clock_pm;
 
@@ -572,7 +571,7 @@ impl hil::gpio::Pin for GPIOPin {
 }
 
 impl ClockClient for GPIOPin {
-    fn configure_clock(&self, frequency: u32) {}
+    fn configure_clock(&self, _frequency: u32) {}
     fn clock_enabled(&self) {}
     fn clock_disabled(&self) {}
 }

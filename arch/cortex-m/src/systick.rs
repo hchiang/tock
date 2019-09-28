@@ -77,7 +77,7 @@ impl SysTick {
     ///   * `clock_speed` - the frequency of SysTick tics in Hertz. For example,
     ///   if the SysTick is driven by the CPU clock, it is simply the CPU speed.
     pub unsafe fn new_with_calibration(clock_speed: u32) -> SysTick {
-        let mut res = SysTick::new();
+        let res = SysTick::new();
         res.hertz.set(clock_speed);
         res
     }
@@ -155,9 +155,5 @@ impl kernel::SysTick for SysTick {
                 .syst_csr
                 .write(ControlAndStatus::ENABLE::SET + ControlAndStatus::CLKSOURCE::SET);
         }
-    }
-
-    fn set_hertz(&self, hertz: u32) {
-        self.hertz.set(hertz);
     }
 }

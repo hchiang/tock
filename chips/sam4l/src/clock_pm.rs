@@ -45,7 +45,6 @@ struct ClockData {
     running: Cell<bool>,
     clockmask: Cell<u32>,
     clocklist: Cell<u32>,
-    mode: Cell<u32>,
     min_freq: Cell<u32>,
     max_freq: Cell<u32>,
     preferred: Cell<u32>,
@@ -61,7 +60,6 @@ impl ClockData {
             running: Cell::new(false),
             clockmask: Cell::new(ALLCLOCKS),
             clocklist: Cell::new(ALLCLOCKS),
-            mode: Cell::new(0),
             min_freq: Cell::new(0),
             max_freq: Cell::new(48000000),
             preferred: Cell::new(0),
@@ -446,6 +444,10 @@ impl ClockManager for ImixClockManager {
         }
         //TODO this line basically does nothing right now 
         self.clients[client_index].client_disabled();
+
+        if self.lock_count.get() == 0 && self.current_clock.get() != 0x1 {
+            self.update_clock();
+        }
 
         return ReturnCode::SUCCESS;
     }

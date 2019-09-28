@@ -506,7 +506,7 @@ pub unsafe fn reset_handler() {
         &process_mgmt_cap,
     );
 
-    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap, &sam4l::clock_pm::CM);
+    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap);
 }
 
 struct Dummy;

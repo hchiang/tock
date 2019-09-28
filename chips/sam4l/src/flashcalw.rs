@@ -31,7 +31,7 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager};
 use crate::clock_pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
@@ -1003,8 +1003,8 @@ impl hil::flash::Flash for FLASHCALW {
     }
 }
 
-impl hil::clock_pm::ClockClient for FLASHCALW {
-    fn configure_clock(&self, frequency: u32) {}
+impl ClockClient for FLASHCALW {
+    fn configure_clock(&self, _frequency: u32) {}
     fn clock_enabled(&self) {
         match self.current_state.get() {
             FlashState::WriteUnlocking2{..} | FlashState::EraseUnlocking2{..} => self.handle_interrupt(),

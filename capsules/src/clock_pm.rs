@@ -27,7 +27,7 @@ impl<C: ChangeClock> Driver for ClockCM<'a, C> {
         }
     }
 
-    fn command(&self, command_num: usize, clock: usize, _: usize, _: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, _: usize, _: usize, _: AppId) -> ReturnCode {
         match command_num {
             // number of pins
             1 => {
