@@ -1,7 +1,6 @@
 use kernel::{AppId, Callback, Driver, ReturnCode};
 use kernel::hil::clock_pm::{SetClock};
 
-
 pub struct ClockCM<C: SetClock> {
     clock_manager: C,
 }
@@ -33,6 +32,16 @@ impl<C: SetClock> Driver for ClockCM<C> {
             // number of pins
             0 => {
                 self.clock_manager.set_clock(clock as u32);
+                ReturnCode::SUCCESS
+            },
+            // reset and start timer
+            1 => {
+                self.clock_manager.start_timer();
+                ReturnCode::SUCCESS
+            },
+            // get timer
+            2 => {
+                self.clock_manager.get_timer();
                 ReturnCode::SUCCESS
             },
             _ => ReturnCode::ENOSUPPORT,

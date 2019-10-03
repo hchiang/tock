@@ -1,5 +1,20 @@
 use kernel::hil::clock_pm::{SetClock};
 use crate::pm;
+use kernel::common::registers::{ReadWrite};
+use kernel::common::StaticRef;
+use kernel::debug;
+
+struct DWTRegisters {
+    ctrl: ReadWrite<u32>,
+    cycnt: ReadWrite<u32>,
+}
+
+struct DBGRegisters {
+    demcr: ReadWrite<u32>,
+}
+
+const DWT: StaticRef<DWTRegisters> = unsafe { StaticRef::new(0xE0001000 as *const _) };
+const DEMCR: StaticRef<ReadWrite<u32>> = unsafe { StaticRef::new(0xE000EDFC as *const _) };
 
 pub struct ImixClockManager{
 }
@@ -46,6 +61,14 @@ impl SetClock for ImixClockManager {
         unsafe {
             pm::PM.change_system_clock(system_clock);
         }
+    }
+    fn start_timer(&self) {
+        DEMCR.set(DEMCR.get() | 0x01000000);
+        DWT.cycnt.set(0); // reset the counter
+        DWT.ctrl.set(1);
+    }
+    fn get_timer(&self) {
+        debug!("Timer {}", DWT.cycnt.get());
     }
 }
 
