@@ -156,4 +156,8 @@ impl kernel::SysTick for SysTick {
                 .write(ControlAndStatus::ENABLE::SET + ControlAndStatus::CLKSOURCE::SET);
         }
     }
+
+    fn set_hertz(&self, hertz: u32) {
+        self.hertz.set(hertz);
+    }
 }

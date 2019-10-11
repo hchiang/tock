@@ -15,6 +15,7 @@ use crate::platform::{Chip, Platform};
 use crate::process::{self, Task};
 use crate::returncode::ReturnCode;
 use crate::syscall::{ContextSwitchReason, Syscall};
+use crate::hil::clock_pm::ChangeClock;
 
 /// The time a process is permitted to run before being pre-empted
 const KERNEL_TICK_DURATION_US: u32 = 10000;
@@ -206,6 +207,7 @@ impl Kernel {
         chip: &C,
         ipc: Option<&ipc::IPC>,
         _capability: &capabilities::MainLoopCapability,
+        clock_driver: &'static ChangeClock,
     ) {
         loop {
             unsafe {
@@ -213,7 +215,7 @@ impl Kernel {
 
                 for p in self.processes.iter() {
                     p.map(|process| {
-                        self.do_process(platform, chip, process, ipc);
+                        self.do_process(platform, chip, process, ipc, clock_driver);
                     });
                     if chip.has_pending_interrupts() {
                         break;
@@ -235,6 +237,7 @@ impl Kernel {
         chip: &C,
         process: &process::ProcessType,
         ipc: Option<&crate::ipc::IPC>,
+        clock_driver: &'static ChangeClock,
     ) {
         let appid = process.appid();
         let systick = chip.systick();
@@ -351,6 +354,10 @@ impl Kernel {
                         }
                         Some(ContextSwitchReason::TimesliceExpired) => {
                             // break to handle other processes.
+                            let clock_freq = clock_driver.change_clock();
+                            if clock_freq.is_some() {
+                                systick.set_hertz(clock_freq.unwrap());
+                            }
                             break;
                         }
                         Some(ContextSwitchReason::Interrupted) => {
