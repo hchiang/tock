@@ -375,6 +375,7 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         if self.clients[client_index].get_enabled() {
+            self.clients[client_index].client_enabled();
             return Ok(pm::get_system_frequency());
         }
 
@@ -410,8 +411,9 @@ impl ClockManager for ImixClockManager {
         }
         else {
              self.change_clockmask.set(next_clockmask);
-
         }
+
+
         return Ok(pm::get_system_frequency());
     }
 

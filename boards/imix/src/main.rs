@@ -25,6 +25,7 @@ use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::spi::SpiMaster;
 use kernel::hil::Controller;
 use kernel::hil::clock_pm::ClockManager;
+use kernel::hil::clock_pm::ChangeClock;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
@@ -459,8 +460,9 @@ pub unsafe fn reset_handler() {
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
-    //rf233.reset();
-    //rf233.start();
+    rf233.reset();
+    rf233.start();
+    sam4l::clock_pm::CM.change_clock();
 
     //imix.pconsole.start();
 
