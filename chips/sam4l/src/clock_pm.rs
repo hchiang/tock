@@ -44,8 +44,7 @@ impl ImixClockManager {
                                     frequency: pm::OscillatorFrequency::Frequency16MHz,
                                     startup_mode: pm::OscillatorStartup::FastStart},
             8 => system_clock = pm::SystemClockSource::RC80M,
-            9 => system_clock = pm::SystemClockSource::RcsysAt115kHz,
-            _ => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
+            _ => system_clock = pm::SystemClockSource::RcsysAt115kHz,
         }
         return system_clock;
     }
