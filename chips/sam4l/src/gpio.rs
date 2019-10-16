@@ -7,7 +7,7 @@ use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
-use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager, ChangeClock};
 use crate::clock_pm;
 
 #[repr(C)]
@@ -414,7 +414,6 @@ impl GPIOPin {
     }
 
     pub fn enable_interrupt(&self) {
-        
         let port: &GpioRegisters = &*self.port;
         if port.ier.val.get() & self.pin_mask == 0 {
             INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -458,6 +457,9 @@ impl GPIOPin {
         self.client.map(|client| {
             client.fired(self.client_data.get());
         });
+        unsafe {
+            clock_pm::CM.change_clock();
+        }
     }
 
     pub fn disable_schmidtt_trigger(&self) {
