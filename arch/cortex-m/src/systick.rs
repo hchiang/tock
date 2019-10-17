@@ -59,6 +59,7 @@ pub struct SysTick {
 const BASE_ADDR: *const SystickRegisters = 0xE000E010 as *const SystickRegisters;
 const SYSTICK_BASE: StaticRef<SystickRegisters> =
     unsafe { StaticRef::new(BASE_ADDR as *const SystickRegisters) };
+static mut clock_hertz: u32 = 0;
 
 impl SysTick {
     /// Initialize the `SysTick` with default values
@@ -82,17 +83,23 @@ impl SysTick {
         res
     }
 
+    pub unsafe fn set_hertz(hertz: u32) {
+        clock_hertz = hertz;
+    }
+
     // Return the tic frequency in hertz. If the calibration value is set in
     // hardware, use `self.hertz`, which is set in the `new_with_calibration`
     // constructor.
     fn hertz(&self) -> u32 {
         let tenms = SYSTICK_BASE.syst_calib.read(CalibrationValue::TENMS);
-        if self.hertz.get() != 0 {
-            self.hertz.get()
-        } else {
-            // The `tenms` register is the reload value for 10ms, so
-            // Hertz = number of tics in 1 second = tenms * 100
-            tenms * 100
+        unsafe {
+            if clock_hertz != 0 {
+                clock_hertz
+            } else {
+                // The `tenms` register is the reload value for 10ms, so
+                // Hertz = number of tics in 1 second = tenms * 100
+                tenms * 100
+            }
         }
     }
 }
@@ -155,9 +162,5 @@ impl kernel::SysTick for SysTick {
                 .syst_csr
                 .write(ControlAndStatus::ENABLE::SET + ControlAndStatus::CLKSOURCE::SET);
         }
-    }
-
-    fn set_hertz(&self, hertz: u32) {
-        self.hertz.set(hertz);
     }
 }

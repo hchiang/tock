@@ -36,9 +36,6 @@ pub trait SysTick {
     ///
     ///   * `with_interrupt` - if set, an expiring timer will fire an interrupt.
     fn enable(&self, with_interrupt: bool);
-
-    /// Set hertz value
-    fn set_hertz(&self, hertz: u32);
 }
 
 /// A dummy `SysTick` implementation in which the timer never expires.
@@ -59,6 +56,4 @@ impl SysTick for () {
     fn greater_than(&self, _: u32) -> bool {
         true
     }
-
-    fn set_hertz(&self, _: u32) {}
 }

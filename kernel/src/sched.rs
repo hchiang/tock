@@ -252,6 +252,7 @@ impl Kernel {
 
             if systick.overflowed() || !systick.greater_than(MIN_QUANTA_THRESHOLD_US) {
                 process.debug_timeslice_expired();
+                let clock_freq = clock_driver.change_clock();
                 break;
             }
 
@@ -354,10 +355,6 @@ impl Kernel {
                         }
                         Some(ContextSwitchReason::TimesliceExpired) => {
                             // break to handle other processes.
-                            let clock_freq = clock_driver.change_clock();
-                            if clock_freq.is_some() {
-                                systick.set_hertz(clock_freq.unwrap());
-                            }
                             break;
                         }
                         Some(ContextSwitchReason::Interrupted) => {
