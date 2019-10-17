@@ -54,6 +54,9 @@ pub trait Pin {
 
     /// Disable the interrupt for the GPIO pin.
     fn disable_interrupt(&self);
+
+    /// Set the minimum clock rate for clock management
+    fn set_clock_rate(&self, clock_rate: u32);
 }
 
 /// Interface for users of synchronous GPIO. In order
