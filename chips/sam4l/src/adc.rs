@@ -468,6 +468,9 @@ impl Adc {
 
     fn disable(&self) -> ReturnCode {
         let regs: &AdcRegisters = &*self.registers;
+
+        regs.cr.write(Control::BGREQDIS::SET + Control::REFBUFDIS::SET);
+
         // disable ADC
         regs.cr.write(Control::DIS::SET);
 
