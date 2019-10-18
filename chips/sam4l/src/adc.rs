@@ -27,7 +27,7 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use kernel::hil::clock_pm::{ClockClient, ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 use crate::clock_pm;
 
 /// Representation of an ADC channel on the SAM4L.
@@ -136,7 +136,7 @@ pub struct Adc {
     callback_frequency: Cell<u32>, 
     callback_buffer: TakeCell<'static, [u16]>,
     callback_length: Cell<usize>,
-    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
+    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 /// Memory mapped registers for the ADC.
@@ -986,17 +986,6 @@ impl hil::adc::AdcHighSpeed for Adc {
             self.next_dma_buffer.replace(buffer2);
             self.next_dma_length.set(length2);
 
-            if self.client_index.is_none() {
-                unsafe {
-                let regval = clock_pm::CM.register(&ADC0);
-                match regval {
-                    Ok(v) => {
-                        self.client_index.set(v);
-                    }
-                    Err(_e) => {} 
-                }
-                }
-            }
             self.disable();
             self.client_index.map( |client_index| {
                 unsafe {
@@ -1141,6 +1130,9 @@ impl dma::DMAClient for Adc {
 }
 
 impl ClockClient for Adc {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        self.client_index.set(client_index);
+    }
     fn configure_clock(&self, frequency: u32) {
         let regs: &AdcRegisters = &*self.registers;
         self.config_and_enable(self.callback_frequency.get(), frequency);

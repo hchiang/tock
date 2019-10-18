@@ -31,7 +31,7 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use kernel::hil::clock_pm::{ClockClient, ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 use crate::clock_pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
@@ -414,7 +414,7 @@ pub struct FLASHCALW {
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
 
-    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
+    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 // static instance for the board. Only one FLASHCALW on chip.
@@ -492,19 +492,6 @@ impl FLASHCALW {
         regs.sr.is_set(PicoCacheStatus::CSTS)
     }
 
-    fn get_client_index(&self) {
-        unsafe {
-        let regval = clock_pm::CM.register(&FLASH_CONTROLLER);
-        match regval {
-            Ok(client_index) => {
-                self.client_index.set(client_index);
-                clock_pm::CM.set_need_lock(client_index, false);
-            }
-            Err(_e) => {} 
-        }
-        }
-    }
-
     pub fn handle_interrupt(&self) {
         let regs: &FlashcalwRegisters = &*self.registers;
 
@@ -562,9 +549,6 @@ impl FLASHCALW {
                 self.current_state
                     .set(FlashState::WriteUnlocking2 { page: page });
 
-                if self.client_index.is_none() {
-                    self.get_client_index();
-                }
                 self.client_index.map( |client_index|
                     unsafe {
                         clock_pm::CM.set_preferred(client_index, 0x04);
@@ -609,9 +593,6 @@ impl FLASHCALW {
             FlashState::EraseUnlocking { page } => {
                 self.current_state.set(FlashState::EraseUnlocking2 { page: page});
 
-                if self.client_index.is_none() {
-                    self.get_client_index();
-                }
                 self.client_index.map( |client_index|
                     unsafe {
                         clock_pm::CM.set_preferred(client_index, 0x04);
@@ -929,9 +910,6 @@ impl FLASHCALW {
         // Hold on to the buffer for the callback.
         self.buffer.replace(buffer);
 
-        if self.client_index.is_none() {
-            self.get_client_index();
-        }
         self.client_index.map( |client_index|
             unsafe {
                 clock_pm::CM.set_preferred(client_index, 0x80);
@@ -1004,6 +982,12 @@ impl hil::flash::Flash for FLASHCALW {
 }
 
 impl ClockClient for FLASHCALW {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        self.client_index.set(client_index);
+        unsafe { 
+            clock_pm::CM.set_need_lock(client_index, false);
+        }
+    }
     fn configure_clock(&self, _frequency: u32) {}
     fn clock_enabled(&self) {
         match self.current_state.get() {

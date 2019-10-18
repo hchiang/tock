@@ -24,8 +24,7 @@ use kernel::hil::radio;
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::spi::SpiMaster;
 use kernel::hil::Controller;
-use kernel::hil::clock_pm::ClockManager;
-use kernel::hil::clock_pm::ChangeClock;
+use kernel::hil::clock_pm::{ClockManager, ChangeClock, ClientIndex};
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
@@ -427,6 +426,14 @@ pub unsafe fn reset_handler() {
     )
     .finalize();
 
+    sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
+    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    sam4l::clock_pm::CM.register(&sam4l::i2c::I2C2);
+    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    sam4l::clock_pm::CM.register(&sam4l::gpio::PC[31]); //D2
+    sam4l::clock_pm::CM.register(&sam4l::gpio::PA[08]); //rf233 irq 
+    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+
     let imix = Imix {
         //pconsole,
         console,
@@ -513,6 +520,7 @@ pub unsafe fn reset_handler() {
 
 struct Dummy;
 impl kernel::hil::clock_pm::ClockClient for Dummy {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {}
     fn configure_clock(&self, frequency: u32) {}
     fn clock_enabled(&self) {}
     fn clock_disabled(&self) {}

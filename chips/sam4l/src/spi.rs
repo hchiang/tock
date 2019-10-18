@@ -22,7 +22,7 @@ use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
 use kernel::{ClockInterface, ReturnCode};
-use kernel::hil::clock_pm::{ClockClient,ClockManager};
+use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 use crate::clock_pm;
 
 #[repr(C)]
@@ -199,7 +199,7 @@ pub struct SpiHw {
     callback_write_buffer: TakeCell<'static, [u8]>,
     callback_read_buffer: TakeCell<'static, [u8]>,
     callback_len: Cell<usize>,
-    client_index: OptionalCell<&'static clock_pm::ImixClientIndex>,
+    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 const SPI_BASE: StaticRef<SpiRegisters> =
@@ -615,19 +615,6 @@ impl spi::SpiMaster for SpiHw {
         self.callback_read_buffer.put(read_buffer);
         self.callback_len.set(len);
 
-        if self.client_index.is_none() {
-            unsafe {
-            let regval = clock_pm::CM.register(&SPI);
-            match regval {
-                Ok(v) => {
-                    self.client_index.set(v);
-                    clock_pm::CM.set_min_frequency(v, self.baud_rate.get());
-                }
-                Err(_e) => {} 
-            }
-            }
-        }
-
         self.client_index.map( |client_index|
             unsafe {
             clock_pm::CM.enable_clock(client_index)
@@ -790,6 +777,12 @@ impl DMAClient for SpiHw {
 }
 
 impl ClockClient for SpiHw {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        self.client_index.set(client_index);
+        unsafe {
+            clock_pm::CM.set_min_frequency(client_index, self.baud_rate.get());
+        }
+    }
     fn configure_clock(&self, frequency: u32) {
         self.set_baud_rate(self.baud_rate.get(), frequency);
     }
