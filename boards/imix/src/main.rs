@@ -144,7 +144,6 @@ struct Imix {
     //>,
     //nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
     nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
-    clock_driver: &'static capsules::clock_pm::ClockCM<'static, sam4l::clock_pm::ImixClockManager>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -186,7 +185,6 @@ impl kernel::Platform for Imix {
             capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
-            28 => f(Some(self.clock_driver)),
             _ => f(None),
         }
     }
@@ -292,9 +290,6 @@ pub unsafe fn reset_handler() {
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
-
-    let clock_driver = static_init!(capsules::clock_pm::ClockCM<'static, sam4l::clock_pm::ImixClockManager>,
-                                    capsules::clock_pm::ClockCM::new(&sam4l::clock_pm::CM));
 
     // Create capabilities that the board needs to call certain protected kernel
     // functions.
@@ -456,7 +451,6 @@ pub unsafe fn reset_handler() {
         //usb_driver,
         //nrf51822: nrf_serialization,
         nonvolatile_storage: nonvolatile_storage,
-        clock_driver,
     };
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
