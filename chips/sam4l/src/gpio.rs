@@ -299,7 +299,6 @@ pub struct GPIOPin {
     client_data: Cell<usize>,
     client: OptionalCell<&'static hil::gpio::Client>,
     client_index: OptionalCell<&'static ClientIndex>,
-    clock_rate: Cell<u32>,
 }
 
 impl GPIOPin {
@@ -314,7 +313,6 @@ impl GPIOPin {
             client_data: Cell::new(0),
             client: OptionalCell::empty(),
             client_index: OptionalCell::empty(),
-            clock_rate: Cell::new(0),
         }
     }
 
@@ -421,7 +419,6 @@ impl GPIOPin {
             INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
             port.ier.set.set(self.pin_mask);
         }
-        
         self.client_index.map( |client_index|
             unsafe {
             clock_pm::CM.enable_clock(client_index)
@@ -561,7 +558,11 @@ impl hil::gpio::Pin for GPIOPin {
     }
 
     fn set_clock_rate(&self, clock_rate: u32) {
-        self.clock_rate.set(clock_rate);
+        self.client_index.map( |client_index|
+            unsafe {
+                clock_pm::CM.set_min_frequency(client_index, clock_rate); 
+            }
+        );
     }
 }
 
@@ -569,7 +570,6 @@ impl ClockClient for GPIOPin {
     fn set_client_index(&self, client_index: &'static ClientIndex) {
         self.client_index.set(client_index);
         unsafe {
-            clock_pm::CM.set_min_frequency(client_index, self.clock_rate.get()); 
             clock_pm::CM.set_need_lock(client_index, false);
         }
     }

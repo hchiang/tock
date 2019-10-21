@@ -4,7 +4,6 @@ use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
 use crate::pm;
 use cortexm4;
-use kernel::debug_gpio;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
@@ -351,8 +350,8 @@ impl ClockManager for ImixClockManager {
         }
         self.clients[num_clients].initialize(client);
         let retval = self.clients[num_clients].get_client_index();
-        client.set_client_index(retval);
         self.num_clients.set(num_clients+1);
+        client.set_client_index(retval);
         return ReturnCode::SUCCESS;
     }
     
