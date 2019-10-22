@@ -514,8 +514,8 @@ pub unsafe fn reset_handler() {
 
 struct Dummy;
 impl kernel::hil::clock_pm::ClockClient for Dummy {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {}
-    fn configure_clock(&self, frequency: u32) {}
+    fn set_client_index(&self, _client_index: &'static ClientIndex) {}
+    fn configure_clock(&self, _frequency: u32) {}
     fn clock_enabled(&self) {}
     fn clock_disabled(&self) {}
 }

@@ -16,7 +16,6 @@ use crate::process::{self, Task};
 use crate::returncode::ReturnCode;
 use crate::syscall::{ContextSwitchReason, Syscall};
 use crate::hil::clock_pm::ChangeClock;
-use crate::debug_gpio;
 
 /// The time a process is permitted to run before being pre-empted
 const KERNEL_TICK_DURATION_US: u32 = 10000;
@@ -253,8 +252,10 @@ impl Kernel {
 
             if systick.overflowed() || !systick.greater_than(MIN_QUANTA_THRESHOLD_US) {
                 process.debug_timeslice_expired();
-                clock_driver.change_clock();
-                //TODO: clock_driver.change_clock(true, appid.idx());
+                if !process.get_compute_mode() {
+                    process.set_compute_mode(true);
+                    clock_driver.set_compute_mode(true);
+                }
                 break;
             }
 
@@ -378,7 +379,13 @@ impl Kernel {
                         // If the process is yielded it might be waiting for a
                         // callback. If there is a task scheduled for this process
                         // go ahead and set the process to execute it.
-                        None => break,
+                        None => {
+                            if process.get_compute_mode() {
+                                process.set_compute_mode(false);
+                                clock_driver.set_compute_mode(false);
+                            }
+                            break;
+                        }
                         Some(cb) => match cb {
                             Task::FunctionCall(ccb) => {
                                 process.push_function_call(ccb);

@@ -19,6 +19,7 @@ const DFLL: u32         = 0x100;
 const PLL: u32          = 0x200; 
 const ALLCLOCKS: u32    = 0x3fe;
 const DEFAULT: u32      = 0x3ff;
+const COMPUTE: u32      = 0x080;
 
 /// Data structure stored by ClockManager for each ClockClient
 struct ClockData {
@@ -150,6 +151,8 @@ pub struct ImixClockManager {
     change_clockmask: Cell<u32>,
     // clockmask of currently running clients that don't need a lock
     nolock_clockmask: Cell<u32>,
+    // number of apps in compute mode
+    compute_counter: Cell<u32>,
 }
 
 impl ImixClockManager {
@@ -257,6 +260,10 @@ impl ImixClockManager {
         if preferred & clockmask != 0 {
             clockmask = preferred;
         }
+        if self.compute_counter.get() > 0 && clockmask & COMPUTE != 0 {
+            clockmask = 0x1;
+        }
+
         // Choose only one clock from clockmask
         let mut clock = 0x1;
         for i in 0..NUM_CLOCK_SOURCES {
@@ -339,6 +346,23 @@ impl ChangeClock for ImixClockManager {
             }
         }
         return None
+    }
+
+    fn set_compute_mode(&self, compute_mode: bool) {
+        let compute_counter = self.compute_counter.get();
+        if compute_mode { 
+            self.compute_counter.set(compute_counter+1);
+            if self.lock_count.get() == 0 && compute_counter == 0 && 
+                self.current_clock.get() != 0x1 {
+                self.update_clock();
+            }
+        } else {
+            self.compute_counter.set(compute_counter-1);
+            if self.lock_count.get() == 0 && compute_counter == 1 &&
+                self.current_clock.get() == 0x1 && self.nolock_clockmask.get() != DEFAULT {
+                self.update_clock();
+            }
+        }
     }
 }
 
@@ -556,5 +580,6 @@ pub static mut CM: ImixClockManager = ImixClockManager {
     lock_count: Cell::new(0),
     change_clockmask: Cell::new(DEFAULT),
     nolock_clockmask: Cell::new(DEFAULT),
+    compute_counter: Cell::new(0),
 };
 
