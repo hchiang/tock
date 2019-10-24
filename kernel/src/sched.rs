@@ -240,6 +240,7 @@ impl Kernel {
         clock_driver: &'static ChangeClock,
     ) {
         let appid = process.appid();
+        clock_driver.set_app_clock_permission(appid.idx(), process.get_allow_clock_change());
         let systick = chip.systick();
         systick.reset();
         systick.set_timer(KERNEL_TICK_DURATION_US);
@@ -286,8 +287,9 @@ impl Kernel {
                                     process.set_syscall_return_value(res.into());
                                 }
                                 Some(Syscall::YIELD) => {
+                                    process.set_allow_clock_change(true);
+                                    clock_driver.set_app_clock_permission(appid.idx(), true);
                                     clock_driver.change_clock();
-                                    //TODO: clock_driver.change_clock(true, appid.idx());
                                     process.set_yielded_state();
                                     process.pop_syscall_stack_frame();
 
@@ -388,6 +390,8 @@ impl Kernel {
                         }
                         Some(cb) => match cb {
                             Task::FunctionCall(ccb) => {
+                                process.set_allow_clock_change(false);
+                                clock_driver.set_app_clock_permission(appid.idx(), false);
                                 process.push_function_call(ccb);
                             }
                             Task::IPC((otherapp, ipc_type)) => {

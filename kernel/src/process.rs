@@ -76,6 +76,12 @@ pub trait ProcessType {
     /// Returns the process's identifier
     fn appid(&self) -> AppId;
 
+    /// Returns the process's allow_clock_change 
+    fn get_allow_clock_change(&self) -> bool;
+
+    /// Set the process's allow_clock_change
+    fn set_allow_clock_change(&self, allow_clock_change: bool);
+
     /// Returns the process's compute_mode 
     fn get_compute_mode(&self) -> bool;
 
@@ -390,6 +396,9 @@ pub struct Process<'a, C: 'static + Chip> {
     /// Corresponds to AppId
     app_idx: usize,
 
+    /// yield has been called so the clock can change for this app
+    allow_clock_change: Cell<bool>,
+
     /// If the app is currently computing
     compute_mode: Cell<bool>,
 
@@ -486,6 +495,14 @@ pub struct Process<'a, C: 'static + Chip> {
 impl<C: Chip> ProcessType for Process<'a, C> {
     fn appid(&self) -> AppId {
         AppId::new(self.kernel, self.app_idx)
+    }
+
+    fn get_allow_clock_change(&self) -> bool {
+        self.allow_clock_change.get()
+    }
+
+    fn set_allow_clock_change(&self, allow_clock_change: bool) {
+        self.allow_clock_change.set(allow_clock_change);
     }
 
     fn get_compute_mode(&self) -> bool {
@@ -1222,6 +1239,7 @@ impl<C: 'static + Chip> Process<'a, C> {
                 &mut *(process_struct_memory_location as *mut Process<'static, C>);
 
             process.app_idx = index;
+            process.allow_clock_change = Cell::new(false);
             process.compute_mode = Cell::new(false);
             process.kernel = kernel;
             process.chip = chip;

@@ -1,5 +1,4 @@
 //! Implementation of the GPIO controller.
-
 use core::cell::Cell;
 use core::ops::{Index, IndexMut};
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -7,7 +6,7 @@ use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
-use kernel::hil::clock_pm::{ClockClient, ClockManager, ChangeClock, ClientIndex};
+use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 use crate::clock_pm;
 
 #[repr(C)]
@@ -443,9 +442,6 @@ impl GPIOPin {
         self.client.map(|client| {
             client.fired(self.client_data.get());
         });
-        unsafe {
-            clock_pm::CM.change_clock();
-        }
     }
 
     pub fn disable_schmidtt_trigger(&self) {

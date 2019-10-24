@@ -46,7 +46,8 @@ pub trait ClockManager {
 }
 
 pub trait ChangeClock {
-    fn change_clock(&self) -> Option<u32>;
+    fn change_clock(&self);
+    fn set_app_clock_permission(&self, app_id: usize, allow_clock_change: bool);
     fn set_compute_mode(&self, compute_mode: bool);
 }
 

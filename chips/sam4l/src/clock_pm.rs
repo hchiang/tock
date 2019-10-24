@@ -21,15 +21,22 @@ const ALLCLOCKS: u32    = 0x3fe;
 const DEFAULT: u32      = 0x3ff;
 const COMPUTE: u32      = 0x080;
 
+#[derive(PartialEq, Copy, Clone)]
+enum PeripheralState {
+    Stopped,
+    Ready,
+    Running, // A client that does not need a lock is enabled
+    Enabled,
+}
+
 /// Data structure stored by ClockManager for each ClockClient
 struct ClockData {
     client: OptionalCell<&'static ClockClient>,
     client_index: Cell<&'static ClientIndex>,
-    enabled: Cell<bool>,
+    state: Cell<PeripheralState>,
+    app_id: Cell<usize>,
+    allow_change: Cell<bool>,
     need_lock: Cell<bool>,
-    // running is true if a client that does not need a lock has had
-    //      client_enabled called
-    running: Cell<bool>,
     clockmask: Cell<u32>,
     clocklist: Cell<u32>,
     min_freq: Cell<u32>,
@@ -42,9 +49,10 @@ impl ClockData {
         ClockData{
             client: OptionalCell::empty(),
             client_index: Cell::new(client_index),
-            enabled: Cell::new(false),
+            state: Cell::new(PeripheralState::Stopped),
+            app_id: Cell::new(0),
+            allow_change: Cell::new(false),
             need_lock: Cell::new(true),
-            running: Cell::new(false),
             clockmask: Cell::new(ALLCLOCKS),
             clocklist: Cell::new(ALLCLOCKS),
             min_freq: Cell::new(0),
@@ -90,14 +98,17 @@ impl ClockData {
     fn get_client_index(&self) -> &'static ClientIndex {
         self.client_index.get()
     }
-    fn get_enabled(&self) -> bool {
-        self.enabled.get()
+    fn get_state(&self) -> PeripheralState {
+        self.state.get()
+    }
+    fn get_app_id(&self) -> usize {
+        self.app_id.get()
+    }
+    fn get_allow_change(&self) -> bool {
+        self.allow_change.get()
     }
     fn get_need_lock(&self) -> bool {
         self.need_lock.get()
-    }
-    fn get_running(&self) -> bool {
-        self.running.get()
     }
     fn get_clockmask(&self) -> u32 {
         self.clockmask.get()
@@ -114,14 +125,17 @@ impl ClockData {
     fn get_preferred(&self) -> u32 {
         self.preferred.get()
     }
-    fn set_enabled(&self, enabled: bool) {
-        self.enabled.set(enabled);
+    fn set_state(&self, state: PeripheralState) {
+        self.state.set(state);
+    }
+    fn set_app_id(&self, app_id: usize) {
+        self.app_id.set(app_id);
+    }
+    fn set_allow_change(&self, allow_change: bool) {
+        self.allow_change.set(allow_change);
     }
     fn set_need_lock(&self, need_lock: bool) {
         self.need_lock.set(need_lock);
-    }
-    fn set_running(&self, running: bool) {
-        self.running.set(running);
     }
     fn set_clockmask(&self, clockmask: u32) {
         self.clockmask.set(clockmask);
@@ -153,6 +167,10 @@ pub struct ImixClockManager {
     nolock_clockmask: Cell<u32>,
     // number of apps in compute mode
     compute_counter: Cell<u32>,
+    // app_id of currently running process
+    app_id: Cell<usize>,
+    // allow clock change when enable/disable_clock are called
+    allow_clock_change: Cell<bool>,
 }
 
 impl ImixClockManager {
@@ -231,7 +249,8 @@ impl ImixClockManager {
         let mut next_client = self.next_client.get();
         let mut preferred = 0;
         for _i in 0..self.num_clients.get() { 
-            if self.clients[next_client].get_enabled() {
+            if self.clients[next_client].get_state() == PeripheralState::Ready &&
+                self.clients[next_client].get_allow_change() == true {
             
                 let next_clockmask = clockmask & 
                                     self.clients[next_client].get_clockmask();
@@ -246,6 +265,7 @@ impl ImixClockManager {
                     change_clockmask = new_change_clockmask;
                 }
                 else {
+                    self.clients[next_client].set_state(PeripheralState::Enabled);
                     clockmask = next_clockmask;
                     preferred |= self.clients[next_client].get_preferred();
                 }
@@ -283,7 +303,7 @@ impl ImixClockManager {
             let old_system_freq = pm::get_system_frequency();
             if old_system_freq < system_freq {
                 for i in 0..self.num_clients.get() { 
-                    if self.clients[i].get_running() {
+                    if self.clients[i].get_state() == PeripheralState::Running {
                         self.clients[i].configure_clock(system_freq);
                     }
                 } 
@@ -294,7 +314,7 @@ impl ImixClockManager {
             }
             if old_system_freq > system_freq {
                 for i in 0..self.num_clients.get() { 
-                    if self.clients[i].get_running() {
+                    if self.clients[i].get_state() == PeripheralState::Running {
                         self.clients[i].configure_clock(system_freq);
                     }
                 } 
@@ -302,7 +322,8 @@ impl ImixClockManager {
         }
 
         for i in 0..self.num_clients.get() { 
-            if !self.clients[i].get_enabled() {
+            let state = self.clients[i].get_state();
+            if state != PeripheralState::Enabled {
                 continue;
             }
             // It's the clock requested by the peripheral
@@ -312,8 +333,9 @@ impl ImixClockManager {
                     self.clients[i].configure_clock(0);
                     self.clients[i].client_enabled();
                 }
-                else if !self.clients[i].get_running() {
-                    self.clients[i].set_running(true);
+                else {
+                    self.clients[i].set_state(PeripheralState::Running);
+                    //TODO update nolock_clockmask?
                     self.clients[i].configure_clock(0);
                     self.clients[i].client_enabled();
                 }
@@ -338,14 +360,28 @@ impl ImixClockManager {
 }
 
 impl ChangeClock for ImixClockManager {
-    fn change_clock(&self) -> Option<u32> {
-        if self.lock_count.get() == 0 {
-            if self.change_clock.get() || self.current_clock.get() != 0x1 {
-                self.update_clock();
-                return Some(pm::get_system_frequency());
+    fn change_clock(&self) {
+        if self.lock_count.get() == 0 && self.change_clock.get() {
+            self.update_clock();
+        }
+    }
+
+    fn set_app_clock_permission(&self, app_id: usize, allow_clock_change: bool) {
+        let current_app_id = self.app_id.get(); 
+        let current_allow = self.allow_clock_change.get();
+
+        self.allow_clock_change.set(allow_clock_change);
+
+        if current_app_id != app_id {
+            self.app_id.set(app_id);
+        } else if current_allow != allow_clock_change {
+            let num_clients = self.num_clients.get();
+            for i in 0..num_clients { 
+                if self.clients[i].get_app_id() == app_id {
+                    self.clients[i].set_allow_change(allow_clock_change);
+                }
             }
         }
-        return None
     }
 
     fn set_compute_mode(&self, compute_mode: bool) {
@@ -384,12 +420,18 @@ impl ClockManager for ImixClockManager {
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
         }
-        if self.clients[client_index].get_enabled() {
+
+        if self.clients[client_index].get_state() == PeripheralState::Enabled {
             self.clients[client_index].client_enabled();
             return Ok(pm::get_system_frequency());
         }
 
-        self.clients[client_index].set_enabled(true);
+        self.clients[client_index].set_state(PeripheralState::Ready);
+        self.clients[client_index].set_app_id(self.app_id.get());
+        if !self.allow_clock_change.get() {
+            return Ok(pm::get_system_frequency());
+        }
+
         let client_clocks = self.clients[client_index].get_clockmask();
         let next_clockmask = self.change_clockmask.get() & client_clocks;
 
@@ -399,6 +441,10 @@ impl ClockManager for ImixClockManager {
         if client_clocks & self.current_clock.get() == 0 {
             self.change_clock.set(true);
             self.change_clockmask.set(next_clockmask);
+    
+            if self.lock_count.get() == 0 {
+                self.update_clock();
+            }
         }
         // The current clock is compatible and client doesn't need a lock
         else if !self.clients[client_index].get_need_lock() {
@@ -406,7 +452,7 @@ impl ClockManager for ImixClockManager {
             // The next clock that will be changed to is also compatible
             if nolock_clockmask & self.change_clockmask.get() != 0 {
                 self.nolock_clockmask.set(nolock_clockmask);
-                self.clients[client_index].set_running(true);
+                self.clients[client_index].set_state(PeripheralState::Running);
                 self.clients[client_index].client_enabled();
             }
             else {
@@ -416,13 +462,13 @@ impl ClockManager for ImixClockManager {
         }
         // The current clock is compatible and there is no pending clock change
         else if !self.change_clock.get() {
+            self.clients[client_index].set_state(PeripheralState::Enabled);
             self.lock_count.set(self.lock_count.get()+1);
             self.clients[client_index].client_enabled();
         }
         else {
              self.change_clockmask.set(next_clockmask);
         }
-
 
         return Ok(pm::get_system_frequency());
     }
@@ -432,12 +478,11 @@ impl ClockManager for ImixClockManager {
         if client_index >= self.num_clients.get() {
             return ReturnCode::EINVAL;
         }
-        if !self.clients[client_index].get_enabled() {
+        if self.clients[client_index].get_state() == PeripheralState::Stopped {
             return ReturnCode::SUCCESS;
         }
 
-        self.clients[client_index].set_enabled(false);
-        self.clients[client_index].set_running(false);
+        self.clients[client_index].set_state(PeripheralState::Stopped);
         if self.clients[client_index].get_need_lock() {
             self.lock_count.set(self.lock_count.get()-1);
         }
@@ -448,7 +493,7 @@ impl ClockManager for ImixClockManager {
             let mut new_clockmask = DEFAULT;
             for i in 0..num_clients { 
                 if !self.clients[i].get_need_lock() &&
-                        self.clients[i].get_running() {
+                        self.clients[i].get_state() == PeripheralState::Running {
                     new_clockmask &= self.clients[i].get_clockmask();
                 }
             }
@@ -581,5 +626,7 @@ pub static mut CM: ImixClockManager = ImixClockManager {
     change_clockmask: Cell::new(DEFAULT),
     nolock_clockmask: Cell::new(DEFAULT),
     compute_counter: Cell::new(0),
+    app_id: Cell::new(0),
+    allow_clock_change: Cell::new(false),
 };
 
