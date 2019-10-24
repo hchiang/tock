@@ -429,6 +429,7 @@ impl ClockManager for ImixClockManager {
         self.clients[client_index].set_state(PeripheralState::Ready);
         self.clients[client_index].set_app_id(self.app_id.get());
         if !self.allow_clock_change.get() {
+            self.change_clock.set(true);
             return Ok(pm::get_system_frequency());
         }
 
