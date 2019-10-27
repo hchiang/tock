@@ -320,12 +320,6 @@ impl ImixClockManager {
             }
         }
         self.lock_count.set(self.lock_count.get()-1);
-
-        // In case the clock chosen is not compatible with all clocks, need 
-        // another clock change
-        //if self.lock_count.get() == 0 && self.change_clock.get() {
-        //    self.update_clock();
-        //}
     }
 
     fn update_clockmask(&self, client_index: usize) {
@@ -338,14 +332,10 @@ impl ImixClockManager {
 }
 
 impl ChangeClock for ImixClockManager {
-    fn change_clock(&self) -> Option<u32> {
-        if self.lock_count.get() == 0 {
-            if self.change_clock.get() || self.current_clock.get() != 0x1 {
-                self.update_clock();
-                return Some(pm::get_system_frequency());
-            }
+    fn change_clock(&self) {
+        if self.lock_count.get() == 0 && self.change_clock.get() {
+            self.update_clock();
         }
-        return None
     }
 
     fn set_compute_mode(&self, compute_mode: bool) {
@@ -354,13 +344,13 @@ impl ChangeClock for ImixClockManager {
             self.compute_counter.set(compute_counter+1);
             if self.lock_count.get() == 0 && compute_counter == 0 && 
                 self.current_clock.get() != 0x1 {
-                self.update_clock();
+                self.change_clock.set(true);
             }
         } else {
             self.compute_counter.set(compute_counter-1);
             if self.lock_count.get() == 0 && compute_counter == 1 &&
                 self.current_clock.get() == 0x1 && self.nolock_clockmask.get() != DEFAULT {
-                self.update_clock();
+                self.change_clock.set(true);
             }
         }
     }
@@ -458,7 +448,7 @@ impl ClockManager for ImixClockManager {
         self.clients[client_index].client_disabled();
 
         if self.lock_count.get() == 0 && self.current_clock.get() != 0x1 {
-            self.update_clock();
+            self.change_clock.set(true);
         }
 
         return ReturnCode::SUCCESS;

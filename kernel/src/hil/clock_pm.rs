@@ -46,7 +46,7 @@ pub trait ClockManager {
 }
 
 pub trait ChangeClock {
-    fn change_clock(&self) -> Option<u32>;
+    fn change_clock(&self);
     fn set_compute_mode(&self, compute_mode: bool);
 }
 

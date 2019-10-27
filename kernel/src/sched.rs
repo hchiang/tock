@@ -222,11 +222,16 @@ impl Kernel {
                     }
                 }
 
+                if !chip.has_pending_interrupts() && self.processes_blocked() {
+                    clock_driver.change_clock();
+                }
+
                 chip.atomic(|| {
                     if !chip.has_pending_interrupts() && self.processes_blocked() {
                         chip.sleep();
                     }
                 });
+                clock_driver.change_clock();
             };
         }
     }
@@ -252,10 +257,6 @@ impl Kernel {
 
             if systick.overflowed() || !systick.greater_than(MIN_QUANTA_THRESHOLD_US) {
                 process.debug_timeslice_expired();
-                if !process.get_compute_mode() {
-                    process.set_compute_mode(true);
-                    clock_driver.set_compute_mode(true);
-                }
                 break;
             }
 
@@ -286,8 +287,6 @@ impl Kernel {
                                     process.set_syscall_return_value(res.into());
                                 }
                                 Some(Syscall::YIELD) => {
-                                    clock_driver.change_clock();
-                                    //TODO: clock_driver.change_clock(true, appid.idx());
                                     process.set_yielded_state();
                                     process.pop_syscall_stack_frame();
 
@@ -360,6 +359,10 @@ impl Kernel {
                         }
                         Some(ContextSwitchReason::TimesliceExpired) => {
                             // break to handle other processes.
+                            if !process.get_compute_mode() {
+                                process.set_compute_mode(true);
+                                clock_driver.set_compute_mode(true);
+                            }
                             break;
                         }
                         Some(ContextSwitchReason::Interrupted) => {
