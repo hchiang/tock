@@ -231,7 +231,6 @@ impl Kernel {
                         chip.sleep();
                     }
                 });
-                clock_driver.change_clock();
             };
         }
     }
