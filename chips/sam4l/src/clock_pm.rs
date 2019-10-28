@@ -34,7 +34,6 @@ struct ClockData {
     clocklist: Cell<u32>,
     min_freq: Cell<u32>,
     max_freq: Cell<u32>,
-    preferred: Cell<u32>,
 }
 
 impl ClockData {
@@ -49,7 +48,6 @@ impl ClockData {
             clocklist: Cell::new(ALLCLOCKS),
             min_freq: Cell::new(0),
             max_freq: Cell::new(48000000),
-            preferred: Cell::new(0),
         }
     }
     fn initialize(&self, client: &'static ClockClient) {
@@ -111,9 +109,6 @@ impl ClockData {
     fn get_max_freq(&self) -> u32 {
         self.max_freq.get()
     }
-    fn get_preferred(&self) -> u32 {
-        self.preferred.get()
-    }
     fn set_enabled(&self, enabled: bool) {
         self.enabled.set(enabled);
     }
@@ -134,9 +129,6 @@ impl ClockData {
     }
     fn set_max_freq(&self, max_freq: u32) {
         self.max_freq.set(max_freq);
-    }
-    fn set_preferred(&self, preferred: u32) {
-        self.preferred.set(preferred);
     }
 }
 
@@ -229,7 +221,6 @@ impl ImixClockManager {
         let mut change_clockmask = DEFAULT;
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
-        let mut preferred = 0;
         for _i in 0..self.num_clients.get() { 
             if self.clients[next_client].get_enabled() {
             
@@ -247,7 +238,6 @@ impl ImixClockManager {
                 }
                 else {
                     clockmask = next_clockmask;
-                    preferred |= self.clients[next_client].get_preferred();
                 }
             }
             
@@ -257,9 +247,6 @@ impl ImixClockManager {
             }
         }
         self.change_clockmask.set(change_clockmask);
-        if preferred & clockmask != 0 {
-            clockmask = preferred;
-        }
         if self.compute_counter.get() > 0 && clockmask & COMPUTE != 0 {
             clockmask = 0x1;
         }
@@ -493,16 +480,6 @@ impl ClockManager for ImixClockManager {
         return ReturnCode::SUCCESS;
     }
 
-    fn set_preferred(&self, cidx:&'static ClientIndex, preferred: u32) -> 
-                                                        ReturnCode {
-        let client_index = cidx.get_index();
-        if client_index >= self.num_clients.get() {
-            return ReturnCode::EINVAL;
-        }
-        self.clients[client_index].set_preferred(preferred);
-        return ReturnCode::SUCCESS;
-    }
-    
     fn get_need_lock(&self, cidx:&'static ClientIndex) -> Result<bool, ReturnCode> {
         let client_index = cidx.get_index();
         if client_index >= self.num_clients.get() {
@@ -530,13 +507,6 @@ impl ClockManager for ImixClockManager {
             return Err(ReturnCode::EINVAL);
         }
         return Ok(self.clients[client_index].get_max_freq());
-    }
-    fn get_preferred(&self, cidx:&'static ClientIndex) -> Result<u32, ReturnCode> {
-        let client_index = cidx.get_index();
-        if client_index >= self.num_clients.get() {
-            return Err(ReturnCode::EINVAL);
-        }
-        return Ok(self.clients[client_index].get_preferred());
     }
 }
 

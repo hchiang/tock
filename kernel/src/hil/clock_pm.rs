@@ -36,13 +36,11 @@ pub trait ClockManager {
     fn set_clocklist(&self, client_index:&'static ClientIndex, clocklist: u32) -> ReturnCode;
     fn set_min_frequency(&self, client_index:&'static ClientIndex, min_freq: u32) -> ReturnCode;
     fn set_max_frequency(&self, client_index:&'static ClientIndex, max_freq: u32) -> ReturnCode;
-    fn set_preferred(&self, client_index:&'static ClientIndex, thresh_freq: u32) -> ReturnCode;
 
     fn get_need_lock(&self, client_index:&'static ClientIndex) -> Result<bool, ReturnCode>;
     fn get_clocklist(&self, client_index:&'static ClientIndex) -> Result<u32, ReturnCode>;
     fn get_min_frequency(&self, client_index:&'static ClientIndex) -> Result<u32, ReturnCode>;
     fn get_max_frequency(&self, client_index:&'static ClientIndex) -> Result<u32, ReturnCode>;
-    fn get_preferred(&self, client_index:&'static ClientIndex) -> Result<u32, ReturnCode>;
 }
 
 pub trait ChangeClock {
