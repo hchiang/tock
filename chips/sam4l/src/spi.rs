@@ -9,11 +9,11 @@
 use crate::dma::DMAChannel;
 use crate::dma::DMAClient;
 use crate::dma::DMAPeripheral;
-use crate::pm::{self, SystemClockSource, RcfastFrequency};
 use crate::gpio;
-use core::sync::atomic::Ordering;
+use crate::pm::{self, RcfastFrequency, SystemClockSource};
 use core::cell::Cell;
 use core::cmp;
+use core::sync::atomic::Ordering;
 use kernel::common::cells::OptionalCell;
 use kernel::common::peripherals::{PeripheralManagement, PeripheralManager};
 use kernel::common::registers::{self, register_bitfields, ReadOnly, ReadWrite, WriteOnly};
@@ -289,8 +289,9 @@ impl SpiHw {
         }
         unsafe {
             let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) != 0;
-            if gpio { // For this app, we are waiting on interrupt from radio
-                pm::PM.change_system_clock(SystemClockSource::RcsysAt115kHz);
+            if gpio {
+                // For this app, we are waiting on interrupt from radio
+                pm::PM.change_system_clock(SystemClockSource::RC1M);
             } else {
                 pm::PM.change_system_clock(SystemClockSource::RC80M);
             }
@@ -308,7 +309,6 @@ impl SpiHw {
     /// The lowest available baud rate is 188235 baud. If the
     /// requested rate is lower, 188235 baud will be selected.
     pub fn set_baud_rate(&self, rate: u32) -> u32 {
-        
         // Main clock frequency
         let mut real_rate = rate;
         let clock = pm::get_system_frequency();
@@ -587,7 +587,9 @@ impl spi::SpiMaster for SpiHw {
         }
 
         unsafe {
-            pm::PM.change_system_clock(SystemClockSource::RCFAST { frequency: RcfastFrequency::Frequency4MHz});
+            pm::PM.change_system_clock(SystemClockSource::RCFAST {
+                frequency: RcfastFrequency::Frequency4MHz,
+            });
         }
         self.read_write_bytes(Some(write_buffer), read_buffer, len)
     }
@@ -741,4 +743,3 @@ impl DMAClient for SpiHw {
         }
     }
 }
-
