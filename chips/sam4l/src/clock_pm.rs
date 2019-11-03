@@ -4,6 +4,7 @@ use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
 use crate::pm;
 use cortexm4;
+use kernel::debug_gpio;
 
 const NUM_CLOCK_CLIENTS: usize = 10; 
 const NUM_CLOCK_SOURCES: usize = 10; //size of SystemClockSource
@@ -276,10 +277,10 @@ impl ImixClockManager {
                 } 
             }
             unsafe {
-                pm::PM.change_system_clock(system_clock);
+                //pm::PM.change_system_clock(system_clock);
                 cortexm4::systick::SysTick::set_hertz(system_freq);
             }
-            if old_system_freq > system_freq {
+            if old_system_freq >= system_freq {
                 for i in 0..self.num_clients.get() { 
                     if self.clients[i].get_running() {
                         self.clients[i].configure_clock(system_freq);

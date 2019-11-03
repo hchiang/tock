@@ -27,6 +27,7 @@ use kernel::hil::Controller;
 use kernel::hil::clock_pm::{ClockManager, ChangeClock, ClientIndex};
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
+use kernel::common::cells::OptionalCell;
 
 use components::adc::AdcComponent;
 use components::alarm::AlarmDriverComponent;
@@ -327,8 +328,8 @@ pub unsafe fn reset_handler() {
     let console = ConsoleComponent::new(board_kernel, uart_mux).finalize();
 
     // Allow processes to communicate over BLE through the nRF51822
-    //let nrf_serialization =
-    //    Nrf51822Component::new(&sam4l::usart::USART2, &sam4l::gpio::PB[07]).finalize();
+    let nrf_serialization =
+        Nrf51822Component::new(&sam4l::usart::USART2, &sam4l::gpio::PB[07]).finalize();
 
     // # TIMER
     let ast = &sam4l::ast::AST;
@@ -421,13 +422,13 @@ pub unsafe fn reset_handler() {
     )
     .finalize();
 
-    sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
-    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
-    sam4l::clock_pm::CM.register(&sam4l::i2c::I2C2);
-    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
-    sam4l::clock_pm::CM.register(&sam4l::gpio::PC[31]); //D2
-    sam4l::clock_pm::CM.register(&sam4l::gpio::PA[08]); //rf233 irq 
-    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+    //sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
+    //sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
+    //sam4l::clock_pm::CM.register(&sam4l::i2c::I2C2);
+    //sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
+    //sam4l::clock_pm::CM.register(&sam4l::gpio::PC[31]); //D2
+    //sam4l::clock_pm::CM.register(&sam4l::gpio::PA[08]); //rf233 irq 
+    //sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
         //pconsole,
@@ -461,9 +462,9 @@ pub unsafe fn reset_handler() {
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
-    rf233.reset();
-    rf233.start();
-    sam4l::clock_pm::CM.change_clock();
+    //rf233.reset();
+    //rf233.start();
+    //sam4l::clock_pm::CM.change_clock();
 
     //imix.pconsole.start();
 
@@ -478,22 +479,44 @@ pub unsafe fn reset_handler() {
     // aes_ccm_test::run();
     // aes_test::run_aes128_ctr();
     // aes_test::run_aes128_cbc();
-/*
-    let client_idx = sam4l::clock_pm::CM.register(&Dummy).unwrap();
-    let cycles = cortexm4::dwt::bench(|| {
-        sam4l::clock_pm::CM.enable_clock(client_idx);
-    });
-    debug!("enable_clock: {}", cycles);
-    let cycles = cortexm4::dwt::bench(|| {
-        sam4l::clock_pm::CM.disable_clock(client_idx);
-    });
-    debug!("disable_clock: {}", cycles);
 
-    let cycles = cortexm4::dwt::bench(|| {
-    });
-    debug!("nop bench: {}", cycles);
-*/
-    debug!("Initialization complete. Entering main loop");
+    // Test compatible
+    //sam4l::clock_pm::CM.register(&Dummy);
+    //sam4l::clock_pm::CM.change_clock();
+    //sam4l::clock_pm::CM.register(&Dummy2);
+    //sam4l::clock_pm::CM.register(&Dummy3);
+
+    // Test incompatible
+    //sam4l::clock_pm::CM.register(&Dummy);
+    //sam4l::clock_pm::CM.change_clock();
+    //sam4l::clock_pm::CM.register(&Dummy4);
+    //sam4l::clock_pm::CM.register(&Dummy6);
+    //sam4l::clock_pm::CM.register(&Dummy5);
+
+    // Test change_clock
+    //sam4l::clock_pm::CM.register(&Dummy);
+    //let cycles = cortexm4::dwt::bench(|| {
+    //    sam4l::clock_pm::CM.change_clock();
+    //});
+    //debug!("change_clock lock: {}", cycles);
+
+    // Test change_clock no lock
+    //sam4l::clock_pm::CM.register(&Dummy7);
+    //let cycles = cortexm4::dwt::bench(|| {
+    //    sam4l::clock_pm::CM.change_clock();
+    //});
+    //debug!("change_clock no lock: {}", cycles);
+
+    // Find range of disable_clock with no lock
+    //sam4l::clock_pm::CM.register(&Dummy2); // addition of lock client
+    //sam4l::clock_pm::CM.register(&Dummy2); // addition of lock client
+    //sam4l::clock_pm::CM.register(&Dummy3); // addition of no lock client
+    //sam4l::clock_pm::CM.register(&Dummy3); // addition of no lock client
+    sam4l::clock_pm::CM.change_clock();
+    sam4l::clock_pm::CM.register(&Dummy8);
+    
+
+    //debug!("Initialization complete. Entering main loop");
 
     extern "C" {
         /// Beginning of the ROM region containing app images.
@@ -514,8 +537,142 @@ pub unsafe fn reset_handler() {
 
 struct Dummy;
 impl kernel::hil::clock_pm::ClockClient for Dummy {
-    fn set_client_index(&self, _client_index: &'static ClientIndex) {}
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // incompatible
+        sam4l::clock_pm::CM.set_clocklist(client_index, 0x300);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock incompatible: {}", cycles);
+        }
+    }
     fn configure_clock(&self, _frequency: u32) {}
     fn clock_enabled(&self) {}
     fn clock_disabled(&self) {}
 }
+struct Dummy2;
+impl kernel::hil::clock_pm::ClockClient for Dummy2 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // compatible and needs a lock, will run
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock lock compatible: {}", cycles);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.disable_clock(client_index);
+        });
+        debug!("disable_clock lock: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+struct Dummy3;
+impl kernel::hil::clock_pm::ClockClient for Dummy3 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // compatible and doesn't need a lock, will start running
+        sam4l::clock_pm::CM.set_need_lock(client_index, false);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock no lock compatible: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+
+struct Dummy4;
+impl kernel::hil::clock_pm::ClockClient for Dummy4 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // incompatible 
+        sam4l::clock_pm::CM.set_clocklist(client_index, 0x200);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock incompatible: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+struct Dummy5;
+impl kernel::hil::clock_pm::ClockClient for Dummy5 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // compatible and doesn't need a lock, cannot run
+        sam4l::clock_pm::CM.set_clocklist(client_index, 0x100);
+        sam4l::clock_pm::CM.set_need_lock(client_index, false);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock no lock compatible: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+struct Dummy6;
+impl kernel::hil::clock_pm::ClockClient for Dummy6 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // compatible and needs a lock, cannot run
+        sam4l::clock_pm::CM.set_clocklist(client_index, 0x100);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock lock compatible: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+struct Dummy7;
+impl kernel::hil::clock_pm::ClockClient for Dummy7 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // incompatible
+        sam4l::clock_pm::CM.set_clocklist(client_index, 0x300);
+        sam4l::clock_pm::CM.set_need_lock(client_index, false);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock incompatible: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+
+struct Dummy8;
+impl kernel::hil::clock_pm::ClockClient for Dummy8 {
+    fn set_client_index(&self, client_index: &'static ClientIndex) {
+        unsafe{
+        // compatible and doesn't need a lock, will start running
+        sam4l::clock_pm::CM.set_need_lock(client_index, false);
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.enable_clock(client_index);
+        });
+        debug!("enable_clock incompatible: {}", cycles);
+        sam4l::clock_pm::CM.change_clock();
+        let cycles = cortexm4::dwt::bench(|| {
+            sam4l::clock_pm::CM.disable_clock(client_index);
+        });
+        debug!("disable_clock no lock: {}", cycles);
+        }
+    }
+    fn configure_clock(&self, _frequency: u32) {}
+    fn clock_enabled(&self) {}
+    fn clock_disabled(&self) {}
+}
+
