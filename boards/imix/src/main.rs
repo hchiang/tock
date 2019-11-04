@@ -421,8 +421,6 @@ pub unsafe fn reset_handler() {
     )
     .finalize();
 
-    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
-
     let imix = Imix {
         //pconsole,
         console,
