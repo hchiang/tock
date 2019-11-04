@@ -426,7 +426,6 @@ pub unsafe fn reset_handler() {
     sam4l::clock_pm::CM.register(&sam4l::i2c::I2C2);
     sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
     sam4l::clock_pm::CM.register(&sam4l::gpio::PC[31]); //D2
-    sam4l::clock_pm::CM.register(&sam4l::gpio::PA[08]); //rf233 irq 
     sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
