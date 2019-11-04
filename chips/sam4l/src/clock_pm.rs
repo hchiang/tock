@@ -330,7 +330,7 @@ impl ChangeClock for ImixClockManager {
         if compute_mode { 
             self.compute_counter.set(compute_counter+1);
             if self.lock_count.get() == 0 && compute_counter == 0 && 
-                self.current_clock.get() != 0x1 {
+                self.current_clock.get() == RCSYS {
                 self.update_clock();
             }
         } else {
