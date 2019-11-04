@@ -1,3 +1,0 @@
-main.c:11:13:write_done	16	static
-main.c:19:13:timer_cb	16	static
-main.c:26:5:main	136	static

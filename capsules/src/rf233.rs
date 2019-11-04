@@ -476,7 +476,6 @@ impl<S: spi::SpiMasterDevice> spi::SpiMasterClient for RF233<'a, S> {
                 self.irq_pin.make_input();
                 self.irq_pin.clear();
                 self.irq_ctl.set_input_mode(gpio::InputMode::PullNone);
-                self.irq_pin.set_clock_rate(1000000);
                 self.irq_pin
                     .enable_interrupt(INTERRUPT_ID, gpio::InterruptMode::RisingEdge);
 

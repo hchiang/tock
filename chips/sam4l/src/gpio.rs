@@ -553,14 +553,6 @@ impl hil::gpio::Pin for GPIOPin {
     fn disable_interrupt(&self) {
         GPIOPin::disable_interrupt(self);
     }
-
-    fn set_clock_rate(&self, clock_rate: u32) {
-        self.client_index.map( |client_index|
-            unsafe {
-                clock_pm::CM.set_min_frequency(client_index, clock_rate); 
-            }
-        );
-    }
 }
 
 impl ClockClient for GPIOPin {
