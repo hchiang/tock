@@ -7,8 +7,6 @@ use kernel::common::cells::OptionalCell;
 use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
-use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 #[repr(C)]
 struct Register {
@@ -298,7 +296,6 @@ pub struct GPIOPin {
     pin_mask: u32,
     client_data: Cell<usize>,
     client: OptionalCell<&'static hil::gpio::Client>,
-    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 impl GPIOPin {
@@ -312,7 +309,6 @@ impl GPIOPin {
             pin_mask: 1 << ((pin as u32) % 32),
             client_data: Cell::new(0),
             client: OptionalCell::empty(),
-            client_index: OptionalCell::empty(),
         }
     }
 
@@ -419,11 +415,6 @@ impl GPIOPin {
             INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
             port.ier.set.set(self.pin_mask);
         }
-        self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.enable_clock(client_index)
-            }
-        );
     }
 
     pub fn disable_interrupt(&self) {
@@ -432,11 +423,6 @@ impl GPIOPin {
             INTERRUPT_COUNT.fetch_sub(1, Ordering::Relaxed);
             port.ier.clear.set(self.pin_mask);
         }
-        self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.disable_clock(client_index)
-            }
-        );
     }
 
     pub fn handle_interrupt(&self) {
@@ -553,16 +539,4 @@ impl hil::gpio::Pin for GPIOPin {
     fn disable_interrupt(&self) {
         GPIOPin::disable_interrupt(self);
     }
-}
-
-impl ClockClient for GPIOPin {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
-        self.client_index.set(client_index);
-        unsafe {
-            clock_pm::CM.set_need_lock(client_index, false);
-        }
-    }
-    fn configure_clock(&self, _frequency: u32) {}
-    fn clock_enabled(&self) {}
-    fn clock_disabled(&self) {}
 }
