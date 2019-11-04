@@ -15,7 +15,6 @@ use crate::platform::{Chip, Platform};
 use crate::process::{self, Task};
 use crate::returncode::ReturnCode;
 use crate::syscall::{ContextSwitchReason, Syscall};
-use crate::hil::clock_pm::ChangeClock;
 
 /// The time a process is permitted to run before being pre-empted
 const KERNEL_TICK_DURATION_US: u32 = 10000;
@@ -207,7 +206,6 @@ impl Kernel {
         chip: &C,
         ipc: Option<&ipc::IPC>,
         _capability: &capabilities::MainLoopCapability,
-        clock_driver: &'static ChangeClock,
     ) {
         loop {
             unsafe {
@@ -215,15 +213,11 @@ impl Kernel {
 
                 for p in self.processes.iter() {
                     p.map(|process| {
-                        self.do_process(platform, chip, process, ipc, clock_driver);
+                        self.do_process(platform, chip, process, ipc);
                     });
                     if chip.has_pending_interrupts() {
                         break;
                     }
-                }
-
-                if !chip.has_pending_interrupts() && self.processes_blocked() {
-                    clock_driver.change_clock();
                 }
 
                 chip.atomic(|| {
@@ -241,7 +235,6 @@ impl Kernel {
         chip: &C,
         process: &process::ProcessType,
         ipc: Option<&crate::ipc::IPC>,
-        clock_driver: &'static ChangeClock,
     ) {
         let appid = process.appid();
         let systick = chip.systick();
@@ -358,10 +351,6 @@ impl Kernel {
                         }
                         Some(ContextSwitchReason::TimesliceExpired) => {
                             // break to handle other processes.
-                            if !process.get_compute_mode() {
-                                process.set_compute_mode(true);
-                                clock_driver.set_compute_mode(true);
-                            }
                             break;
                         }
                         Some(ContextSwitchReason::Interrupted) => {
@@ -376,37 +365,29 @@ impl Kernel {
                         }
                     }
                 }
-                process::State::Yielded => {
-                    match process.dequeue_task() {
-                        // If the process is yielded it might be waiting for a
-                        // callback. If there is a task scheduled for this process
-                        // go ahead and set the process to execute it.
-                        None => {
-                            if process.get_compute_mode() {
-                                process.set_compute_mode(false);
-                                clock_driver.set_compute_mode(false);
-                            }
-                            break;
+                process::State::Yielded => match process.dequeue_task() {
+                    // If the process is yielded it might be waiting for a
+                    // callback. If there is a task scheduled for this process
+                    // go ahead and set the process to execute it.
+                    None => break,
+                    Some(cb) => match cb {
+                        Task::FunctionCall(ccb) => {
+                            process.push_function_call(ccb);
                         }
-                        Some(cb) => match cb {
-                            Task::FunctionCall(ccb) => {
-                                process.push_function_call(ccb);
-                            }
-                            Task::IPC((otherapp, ipc_type)) => {
-                                ipc.map_or_else(
-                                    || {
-                                        assert!(
-                                            false,
-                                            "Kernel consistency error: IPC Task with no IPC"
-                                        );
-                                    },
-                                    |ipc| {
-                                        ipc.schedule_callback(appid, otherapp, ipc_type);
-                                    },
-                                );
-                            }
-                        },
-                    }
+                        Task::IPC((otherapp, ipc_type)) => {
+                            ipc.map_or_else(
+                                || {
+                                    assert!(
+                                        false,
+                                        "Kernel consistency error: IPC Task with no IPC"
+                                    );
+                                },
+                                |ipc| {
+                                    ipc.schedule_callback(appid, otherapp, ipc_type);
+                                },
+                            );
+                        }
+                    },
                 },
                 process::State::Fault => {
                     // We should never be scheduling a process in fault.

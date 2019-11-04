@@ -24,7 +24,6 @@ use kernel::hil::radio;
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::spi::SpiMaster;
 use kernel::hil::Controller;
-use kernel::hil::clock_pm::{ClockManager, ChangeClock, ClientIndex};
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
@@ -455,7 +454,6 @@ pub unsafe fn reset_handler() {
     // initialization to work.
     rf233.reset();
     rf233.start();
-    sam4l::clock_pm::CM.change_clock();
 
     //imix.pconsole.start();
 
@@ -501,13 +499,5 @@ pub unsafe fn reset_handler() {
         &process_mgmt_cap,
     );
 
-    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap, &sam4l::clock_pm::CM);
-}
-
-struct Dummy;
-impl kernel::hil::clock_pm::ClockClient for Dummy {
-    fn set_client_index(&self, _client_index: &'static ClientIndex) {}
-    fn configure_clock(&self, _frequency: u32) {}
-    fn clock_enabled(&self) {}
-    fn clock_disabled(&self) {}
+    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap);
 }

@@ -1,6 +1,5 @@
 //! ARM Cortex-M SysTick peripheral.
 
-use core::cell::Cell;
 use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite};
 use kernel::common::StaticRef;
 
@@ -53,13 +52,12 @@ register_bitfields![u32,
 ///
 /// Documented in the Cortex-MX Devices Generic User Guide, Chapter 4.4
 pub struct SysTick {
-    hertz: Cell<u32>,
+    hertz: u32,
 }
 
 const BASE_ADDR: *const SystickRegisters = 0xE000E010 as *const SystickRegisters;
 const SYSTICK_BASE: StaticRef<SystickRegisters> =
     unsafe { StaticRef::new(BASE_ADDR as *const SystickRegisters) };
-static mut clock_hertz: u32 = 0;
 
 impl SysTick {
     /// Initialize the `SysTick` with default values
@@ -67,7 +65,7 @@ impl SysTick {
     /// Use this constructor if the core implementation has a pre-calibration
     /// value in hardware.
     pub unsafe fn new() -> SysTick {
-        SysTick { hertz: Cell::new(0) }
+        SysTick { hertz: 0 }
     }
 
     /// Initialize the `SysTick` with an explicit clock speed
@@ -78,13 +76,9 @@ impl SysTick {
     ///   * `clock_speed` - the frequency of SysTick tics in Hertz. For example,
     ///   if the SysTick is driven by the CPU clock, it is simply the CPU speed.
     pub unsafe fn new_with_calibration(clock_speed: u32) -> SysTick {
-        let res = SysTick::new();
-        res.hertz.set(clock_speed);
+        let mut res = SysTick::new();
+        res.hertz = clock_speed;
         res
-    }
-
-    pub unsafe fn set_hertz(hertz: u32) {
-        clock_hertz = hertz;
     }
 
     // Return the tic frequency in hertz. If the calibration value is set in
@@ -92,14 +86,12 @@ impl SysTick {
     // constructor.
     fn hertz(&self) -> u32 {
         let tenms = SYSTICK_BASE.syst_calib.read(CalibrationValue::TENMS);
-        unsafe {
-            if clock_hertz != 0 {
-                clock_hertz
-            } else {
-                // The `tenms` register is the reload value for 10ms, so
-                // Hertz = number of tics in 1 second = tenms * 100
-                tenms * 100
-            }
+        if tenms == 0 {
+            self.hertz
+        } else {
+            // The `tenms` register is the reload value for 10ms, so
+            // Hertz = number of tics in 1 second = tenms * 100
+            tenms * 100
         }
     }
 }

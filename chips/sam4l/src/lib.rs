@@ -31,7 +31,6 @@ pub mod spi;
 pub mod trng;
 pub mod usart;
 pub mod usbc;
-pub mod clock_pm;
 pub mod wdt;
 
 use cortexm4::{generic_isr, hard_fault_handler, svc_handler, systick_handler};

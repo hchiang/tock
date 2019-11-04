@@ -76,12 +76,6 @@ pub trait ProcessType {
     /// Returns the process's identifier
     fn appid(&self) -> AppId;
 
-    /// Returns the process's compute_mode 
-    fn get_compute_mode(&self) -> bool;
-
-    /// Set the process's compute_mode
-    fn set_compute_mode(&self, compute_mode: bool);
-
     /// Queue a `Task` for the process. This will be added to a per-process
     /// buffer and executed by the scheduler. `Task`s are some function the app
     /// should run, for example a callback or an IPC call.
@@ -390,9 +384,6 @@ pub struct Process<'a, C: 'static + Chip> {
     /// Corresponds to AppId
     app_idx: usize,
 
-    /// If the app is currently computing
-    compute_mode: Cell<bool>,
-
     /// Pointer to the main Kernel struct.
     kernel: &'static Kernel,
 
@@ -486,14 +477,6 @@ pub struct Process<'a, C: 'static + Chip> {
 impl<C: Chip> ProcessType for Process<'a, C> {
     fn appid(&self) -> AppId {
         AppId::new(self.kernel, self.app_idx)
-    }
-
-    fn get_compute_mode(&self) -> bool {
-        self.compute_mode.get()
-    }
-
-    fn set_compute_mode(&self, compute_mode: bool) {
-        self.compute_mode.set(compute_mode);
     }
 
     fn enqueue_task(&self, task: Task) -> bool {
@@ -721,7 +704,7 @@ impl<C: Chip> ProcessType for Process<'a, C> {
                 unallocated_memory_start,
                 unallocated_memory_size,
                 min_region_size,
-                mpu::Permissions::ReadWriteExecute,
+                mpu::Permissions::ReadWriteOnly,
                 &mut config,
             );
 
@@ -756,7 +739,7 @@ impl<C: Chip> ProcessType for Process<'a, C> {
                 } else if let Err(_) = self.chip.mpu().update_app_memory_region(
                     new_break,
                     self.kernel_memory_break.get(),
-                    mpu::Permissions::ReadWriteExecute,
+                    mpu::Permissions::ReadWriteOnly,
                     &mut config,
                 ) {
                     Err(Error::OutOfMemory)
@@ -801,7 +784,7 @@ impl<C: Chip> ProcessType for Process<'a, C> {
             } else if let Err(_) = self.chip.mpu().update_app_memory_region(
                 self.app_break.get(),
                 new_break,
-                mpu::Permissions::ReadWriteExecute,
+                mpu::Permissions::ReadWriteOnly,
                 &mut config,
             ) {
                 None
@@ -1164,7 +1147,7 @@ impl<C: 'static + Chip> Process<'a, C> {
                 min_total_memory_size,
                 initial_app_memory_size,
                 initial_kernel_memory_size,
-                mpu::Permissions::ReadWriteExecute,
+                mpu::Permissions::ReadWriteOnly,
                 &mut mpu_config,
             ) {
                 Some((memory_start, memory_size)) => (memory_start, memory_size),
@@ -1222,7 +1205,6 @@ impl<C: 'static + Chip> Process<'a, C> {
                 &mut *(process_struct_memory_location as *mut Process<'static, C>);
 
             process.app_idx = index;
-            process.compute_mode = Cell::new(false);
             process.kernel = kernel;
             process.chip = chip;
             process.memory = app_memory;
