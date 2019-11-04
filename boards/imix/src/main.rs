@@ -421,7 +421,6 @@ pub unsafe fn reset_handler() {
     )
     .finalize();
 
-    sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
     sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
     sam4l::clock_pm::CM.register(&sam4l::i2c::I2C2);
     sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
