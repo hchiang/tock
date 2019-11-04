@@ -31,8 +31,6 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
 #[repr(C)]
@@ -355,11 +353,9 @@ enum FlashState {
     Ready,                        // Flash is ready to complete a command.
     Read,                         // Performing a read operation.
     WriteUnlocking { page: i32 }, // Started a write operation.
-    WriteUnlocking2 { page: i32 }, // Started a write operation.
     WriteErasing { page: i32 },   // Waiting on the page to erase.
     WriteWriting,                 // Waiting on the page to actually be written.
     EraseUnlocking { page: i32 }, // Started an erase operation.
-    EraseUnlocking2 { page: i32 }, // Started an erase operation.
     EraseErasing,                 // Waiting on the erase to finish.
 }
 
@@ -413,8 +409,6 @@ pub struct FLASHCALW {
     client: OptionalCell<&'static hil::flash::Client<FLASHCALW>>,
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
-
-    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 // static instance for the board. Only one FLASHCALW on chip.
@@ -437,6 +431,7 @@ const FREQ_PS0_FWS_1_MAX_FREQ: u32 = 36000000;
 #[cfg(CONFIG_FLASH_READ_MODE_HIGH_SPEED_DISABLE)]
 const FREQ_PS1_FWS_0_MAX_FREQ: u32 = 8000000;
 
+
 #[cfg(not(CONFIG_FLASH_READ_MODE_HIGH_SPEED_DISABLE))]
 const FREQ_PS2_FWS_0_MAX_FREQ: u32 = 24000000;
 
@@ -455,9 +450,9 @@ impl FLASHCALW {
             client: OptionalCell::empty(),
             current_state: Cell::new(FlashState::Unconfigured),
             buffer: TakeCell::empty(),
-            client_index: OptionalCell::empty(),
         }
     }
+
 
     /// Cache controlling functionality.
 
@@ -478,6 +473,7 @@ impl FLASHCALW {
 
     /// Enable HCACHE
     pub fn enable_cache(&self) {
+
         // enable appropriate clocks
         pm::enable_clock(pm::Clock::HSB(pm::HSBClock::FLASHCALWP));
         pm::enable_clock(pm::Clock::PBB(pm::PBBClock::HRAMC1));
@@ -491,6 +487,7 @@ impl FLASHCALW {
         let regs: &FlashcalwRegisters = &*self.registers;
         regs.sr.is_set(PicoCacheStatus::CSTS)
     }
+
 
     pub fn handle_interrupt(&self) {
         let regs: &FlashcalwRegisters = &*self.registers;
@@ -514,51 +511,34 @@ impl FLASHCALW {
                         client.read_complete(buffer, hil::flash::Error::FlashError);
                     });
                 }
-                FlashState::WriteUnlocking { .. }
-                | FlashState::WriteErasing { .. }
-                | FlashState::WriteWriting => {
+                FlashState::WriteUnlocking { .. } |
+                FlashState::WriteErasing { .. } |
+                FlashState::WriteWriting => {
                     self.buffer.take().map(|buffer| {
                         client.write_complete(buffer, hil::flash::Error::FlashError);
                     });
                 }
-                FlashState::EraseUnlocking { .. } | FlashState::EraseErasing => {
+                FlashState::EraseUnlocking { .. } |
+                FlashState::EraseErasing => {
                     client.erase_complete(hil::flash::Error::FlashError);
                 }
                 _ => {}
             });
         }
-
         // Part of a command succeeded -- continue onto next steps.
         match self.current_state.get() {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
-
-                self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
-                );
 
                 self.client.map(|client| {
                     self.buffer.take().map(|buffer| {
                         client.read_complete(buffer, hil::flash::Error::CommandComplete);
                     });
                 });
+
             }
             FlashState::WriteUnlocking { page } => {
-                self.current_state
-                    .set(FlashState::WriteUnlocking2 { page: page });
-
-                self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.set_min_frequency(client_index, 1000000);
-                        clock_pm::CM.enable_clock(client_index)
-                    }
-                );
-            }
-            FlashState::WriteUnlocking2 { page } => {
-                self.current_state
-                    .set(FlashState::WriteErasing { page: page });
+                self.current_state.set(FlashState::WriteErasing { page: page });
                 self.flashcalw_erase_page(page);
             }
             FlashState::WriteErasing { page } => {
@@ -578,12 +558,6 @@ impl FLASHCALW {
 
                 self.current_state.set(FlashState::Ready);
 
-                self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
-                );
-
                 self.client.map(|client| {
                     self.buffer.take().map(|buffer| {
                         client.write_complete(buffer, hil::flash::Error::CommandComplete);
@@ -591,27 +565,11 @@ impl FLASHCALW {
                 });
             }
             FlashState::EraseUnlocking { page } => {
-                self.current_state.set(FlashState::EraseUnlocking2 { page: page});
-
-                self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.set_min_frequency(client_index, 1000000);
-                        clock_pm::CM.enable_clock(client_index)
-                    }
-                );
-            }
-            FlashState::EraseUnlocking2 { page } => {
                 self.current_state.set(FlashState::EraseErasing);
                 self.flashcalw_erase_page(page);
             }
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
-
-                self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
-                );
 
                 self.client.map(|client| {
                     client.erase_complete(hil::flash::Error::CommandComplete);
@@ -620,6 +578,7 @@ impl FLASHCALW {
             _ => {
                 self.current_state.set(FlashState::Ready);
             }
+
         }
     }
 
@@ -632,6 +591,7 @@ impl FLASHCALW {
         // get the FSZ number and lookup in the table for the size.
         flash_sizes[regs.fpr.read(FlashParameter::FSZ) as usize] << 10
     }
+
 
     /// FLASHC Control
     pub fn set_wait_state(&self, wait_state: u32) {
@@ -662,13 +622,12 @@ impl FLASHCALW {
         self.issue_command(FlashCMD::HSEN, -1);
     }
 
+
     #[cfg(CONFIG_FLASH_READ_MODE_HIGH_SPEED_DISABLE)]
-    fn set_flash_waitstate_and_readmode(
-        &mut self,
-        cpu_freq: u32,
-        ps_val: u32,
-        is_fwu_enabled: bool,
-    ) {
+    fn set_flash_waitstate_and_readmode(&mut self,
+                                        cpu_freq: u32,
+                                        ps_val: u32,
+                                        is_fwu_enabled: bool) {
         if ps_val == 0 {
             if cpu_freq > FREQ_PS0_FWS_0_MAX_FREQ {
                 self.set_wait_state(1);
@@ -686,6 +645,7 @@ impl FLASHCALW {
                     self.issue_command(FlashCMD::HSDIS, -1);
                 }
             }
+
         } else {
             // ps_val == 1
             if cpu_freq > FREQ_PS1_FWS_0_MAX_FREQ {
@@ -698,6 +658,7 @@ impl FLASHCALW {
     }
 
     /// Configure high-speed flash mode. This is taken from the ASF code
+    // 1 Wait State for > 24MHz
     pub fn enable_high_speed_flash(&self) {
         let regs: &FlashcalwRegisters = &*self.registers;
 
@@ -759,6 +720,7 @@ impl FLASHCALW {
             while !regs.fsr.is_set(FlashStatus::FRDY) {}
         }
     }
+
 
     /// Flashcalw global commands
     fn lock_page_region(&self, page_number: i32, lock: bool) {
@@ -907,22 +869,14 @@ impl FLASHCALW {
         }
 
         self.current_state.set(FlashState::Read);
-        // Hold on to the buffer for the callback.
         self.buffer.replace(buffer);
-
-        self.client_index.map( |client_index|
-            unsafe {
-                clock_pm::CM.set_min_frequency(client_index, 40000000);
-                clock_pm::CM.enable_clock(client_index);
-            }
-        );
 
         // This is kind of strange, but because read() in this case is
         // synchronous, we still need to schedule as if we had an interrupt so
         // we can allow this function to return and then call the callback.
         DEFERRED_CALL.set();
-
         ReturnCode::SUCCESS
+
     }
 
     fn write_page(&self, page_num: i32, data: &'static mut Sam4lPage) -> ReturnCode {
@@ -939,8 +893,7 @@ impl FLASHCALW {
         // Save the buffer for the future write.
         self.buffer.replace(data);
 
-        self.current_state
-            .set(FlashState::WriteUnlocking { page: page_num });
+        self.current_state.set(FlashState::WriteUnlocking { page: page_num });
         self.lock_page_region(page_num, false);
         ReturnCode::SUCCESS
     }
@@ -952,8 +905,7 @@ impl FLASHCALW {
             return ReturnCode::EBUSY;
         }
 
-        self.current_state
-            .set(FlashState::EraseUnlocking { page: page_num });
+        self.current_state.set(FlashState::EraseUnlocking { page: page_num });
         self.lock_page_region(page_num, false);
         ReturnCode::SUCCESS
     }
@@ -980,21 +932,3 @@ impl hil::flash::Flash for FLASHCALW {
         self.erase_page(page_number as i32)
     }
 }
-
-impl ClockClient for FLASHCALW {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
-        self.client_index.set(client_index);
-        unsafe { 
-            clock_pm::CM.set_need_lock(client_index, false);
-        }
-    }
-    fn configure_clock(&self, _frequency: u32) {}
-    fn clock_enabled(&self) {
-        match self.current_state.get() {
-            FlashState::WriteUnlocking2{..} | FlashState::EraseUnlocking2{..} => self.handle_interrupt(),
-            _ => {}
-        }
-    }
-    fn clock_disabled(&self) {}
-}
-
