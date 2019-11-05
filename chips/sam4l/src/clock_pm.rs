@@ -247,7 +247,7 @@ impl ImixClockManager {
             }
         }
         self.change_clockmask.set(change_clockmask);
-        if self.compute_counter.get() > 0 && clockmask & COMPUTE != 0 {
+        if self.compute_counter.get() > 0 && clockmask & COMPUTE != 0 && clockmask & RCSYS != 0 {
             clockmask = 0x1;
         }
 
@@ -327,16 +327,18 @@ impl ChangeClock for ImixClockManager {
 
     fn set_compute_mode(&self, compute_mode: bool) {
         let compute_counter = self.compute_counter.get();
+        let current_clock = self.current_clock.get();
         if compute_mode { 
             self.compute_counter.set(compute_counter+1);
             if self.lock_count.get() == 0 && compute_counter == 0 && 
-                self.current_clock.get() == RCSYS {
+                (current_clock == RCSYS || 
+                current_clock != 0x1 && self.nolock_clockmask.get() == DEFAULT) {
                 self.update_clock();
             }
         } else {
             self.compute_counter.set(compute_counter-1);
             if self.lock_count.get() == 0 && compute_counter == 1 &&
-                self.current_clock.get() == 0x1 && self.nolock_clockmask.get() != DEFAULT {
+                current_clock == 0x1 && self.nolock_clockmask.get() != DEFAULT {
                 self.change_clock.set(true);
             }
         }
