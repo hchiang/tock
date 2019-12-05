@@ -41,7 +41,7 @@ use kernel::{AppId, AppSlice, Callback, Driver, Grant, ReturnCode, Shared};
 
 /// Syscall driver number.
 use crate::driver;
-pub const DRIVER_NUM: usize = driver::NUM::CONSOLE as usize;
+pub const DRIVER_NUM: usize = driver::NUM::Console as usize;
 
 #[derive(Default)]
 pub struct App {
@@ -60,7 +60,7 @@ pub static mut WRITE_BUF: [u8; 64] = [0; 64];
 pub static mut READ_BUF: [u8; 64] = [0; 64];
 
 pub struct Console<'a> {
-    uart: &'a uart::UartData<'a>,
+    uart: &'a dyn uart::UartData<'a>,
     apps: Grant<App>,
     tx_in_progress: OptionalCell<AppId>,
     tx_buffer: TakeCell<'static, [u8]>,
@@ -70,7 +70,7 @@ pub struct Console<'a> {
 
 impl Console<'a> {
     pub fn new(
-        uart: &'a uart::UartData<'a>,
+        uart: &'a dyn uart::UartData<'a>,
         tx_buffer: &'static mut [u8],
         rx_buffer: &'static mut [u8],
         grant: Grant<App>,

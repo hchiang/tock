@@ -8,9 +8,11 @@
 #![deny(missing_docs)]
 
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
-use capsules::virtual_uart::{MuxUart, UartDevice};
+use capsules::virtual_uart::MuxUart;
 use kernel::capabilities;
-use kernel::hil;
+use kernel::component::Component;
+use kernel::hil::gpio::Configure;
+use kernel::hil::{self, time::Alarm};
 use kernel::Platform;
 use kernel::{create_capability, debug, static_init};
 
@@ -25,7 +27,7 @@ mod virtual_uart_rx_test;
 const NUM_PROCS: usize = 4;
 
 // Actual memory for holding the active process structures.
-static mut PROCESSES: [Option<&'static kernel::procs::ProcessType>; NUM_PROCS] =
+static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
     [None, None, None, None];
 
 // How should the kernel respond when a process faults.
@@ -35,18 +37,26 @@ const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultRespons
 #[link_section = ".app_memory"]
 static mut APP_MEMORY: [u8; 65536] = [0; 65536];
 
+// Force the emission of the `.apps` segment in the kernel elf image
+// NOTE: This will cause the kernel to overwrite any existing apps when flashed!
+#[used]
+#[link_section = ".app.hack"]
+static APP_HACK: u8 = 0;
+
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
 pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
+
+const NUM_BUTTONS: usize = 1;
 
 /// A structure representing this platform that holds references to all
 /// capsules for this platform.
 struct NucleoF446RE {
     console: &'static capsules::console::Console<'static>,
     ipc: kernel::ipc::IPC,
-    led: &'static capsules::led::LED<'static, stm32f4xx::gpio::Pin<'static>>,
-    button: &'static capsules::button::Button<'static, stm32f4xx::gpio::Pin<'static>>,
+    led: &'static capsules::led::LED<'static>,
+    button: &'static capsules::button::Button<'static>,
     alarm: &'static capsules::alarm::AlarmDriver<
         'static,
         VirtualMuxAlarm<'static, stm32f4xx::tim2::Tim2<'static>>,
@@ -57,7 +67,7 @@ struct NucleoF446RE {
 impl Platform for NucleoF446RE {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
     where
-        F: FnOnce(Option<&kernel::Driver>) -> R,
+        F: FnOnce(Option<&dyn kernel::Driver>) -> R,
     {
         match driver_num {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
@@ -98,7 +108,6 @@ unsafe fn setup_dma() {
 
 /// Helper function called during bring-up that configures multiplexed I/O.
 unsafe fn set_pin_primary_functions() {
-    use kernel::hil::gpio::Pin;
     use stm32f4xx::exti::{LineId, EXTI};
     use stm32f4xx::gpio::{AlternateFunction, Mode, PinId, PortId, PORT};
     use stm32f4xx::syscfg::SYSCFG;
@@ -200,25 +209,6 @@ pub unsafe fn reset_handler() {
     hil::uart::Transmit::set_transmit_client(&stm32f4xx::usart::USART2, mux_uart);
     hil::uart::Receive::set_receive_client(&stm32f4xx::usart::USART2, mux_uart);
 
-    // Create a virtual device for kernel debug.
-    let debugger_uart = static_init!(UartDevice, UartDevice::new(mux_uart, false));
-    debugger_uart.setup();
-    let debugger = static_init!(
-        kernel::debug::DebugWriter,
-        kernel::debug::DebugWriter::new(
-            debugger_uart,
-            &mut kernel::debug::OUTPUT_BUF,
-            &mut kernel::debug::INTERNAL_BUF,
-        )
-    );
-    hil::uart::Transmit::set_transmit_client(debugger_uart, debugger);
-
-    let debug_wrapper = static_init!(
-        kernel::debug::DebugWriterWrapper,
-        kernel::debug::DebugWriterWrapper::new(debugger)
-    );
-    kernel::debug::set_debug_writer_wrapper(debug_wrapper);
-
     // Create capabilities that the board needs to call certain protected kernel
     // functions.
     let memory_allocation_capability = create_capability!(capabilities::MemoryAllocationCapability);
@@ -226,20 +216,10 @@ pub unsafe fn reset_handler() {
     let process_management_capability =
         create_capability!(capabilities::ProcessManagementCapability);
 
-    // Create a UartDevice for console
-    let console_uart = static_init!(UartDevice, UartDevice::new(mux_uart, true));
-    console_uart.setup();
-    let console = static_init!(
-        capsules::console::Console,
-        capsules::console::Console::new(
-            console_uart,
-            &mut capsules::console::WRITE_BUF,
-            &mut capsules::console::READ_BUF,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
-    );
-    hil::uart::Transmit::set_transmit_client(console_uart, console);
-    hil::uart::Receive::set_receive_client(console_uart, console);
+    // Setup the console.
+    let console = components::console::ConsoleComponent::new(board_kernel, mux_uart).finalize(());
+    // Create the debugger object that handles calls to `debug!()`.
+    components::debug_writer::DebugWriterComponent::new(mux_uart).finalize(());
 
     // // Setup the process inspection console
     // let process_console_uart = static_init!(UartDevice, UartDevice::new(mux_uart, true));
@@ -265,34 +245,48 @@ pub unsafe fn reset_handler() {
 
     // Clock to Port A is enabled in `set_pin_primary_functions()`
     let led_pins = static_init!(
-        [(&'static stm32f4xx::gpio::Pin, capsules::led::ActivationMode); 1],
         [(
-            &stm32f4xx::gpio::PinId::PA05.get_pin().as_ref().unwrap(),
+            &'static dyn kernel::hil::gpio::Pin,
+            capsules::led::ActivationMode
+        ); 1],
+        [(
+            stm32f4xx::gpio::PinId::PA05.get_pin().as_ref().unwrap(),
             capsules::led::ActivationMode::ActiveHigh
         )]
     );
     let led = static_init!(
-        capsules::led::LED<'static, stm32f4xx::gpio::Pin<'static>>,
-        capsules::led::LED::new(led_pins)
+        capsules::led::LED<'static>,
+        capsules::led::LED::new(&led_pins[..])
     );
 
     // BUTTONs
     let button_pins = static_init!(
-        [(&'static stm32f4xx::gpio::Pin, capsules::button::GpioMode); 1],
         [(
-            &stm32f4xx::gpio::PinId::PC13.get_pin().as_ref().unwrap(),
+            &'static dyn kernel::hil::gpio::InterruptValuePin,
+            capsules::button::GpioMode
+        ); NUM_BUTTONS],
+        [(
+            static_init!(
+                kernel::hil::gpio::InterruptValueWrapper,
+                kernel::hil::gpio::InterruptValueWrapper::new(
+                    stm32f4xx::gpio::PinId::PC13.get_pin().as_ref().unwrap()
+                )
+            )
+            .finalize(),
             capsules::button::GpioMode::LowWhenPressed
-        )]
+        ),]
     );
+
     let button = static_init!(
-        capsules::button::Button<'static, stm32f4xx::gpio::Pin>,
+        capsules::button::Button<'static>,
         capsules::button::Button::new(
             button_pins,
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
-    for &(btn, _) in button_pins.iter() {
-        btn.set_client(button);
+
+    for (pin, _) in button_pins.iter() {
+        pin.set_client(button);
     }
 
     // ALARM

@@ -17,7 +17,8 @@ use core::{cmp, mem};
 use kernel::{debug, AppId, AppSlice, Callback, Driver, Grant, ReturnCode, Shared};
 
 /// Syscall number
-pub const DRIVER_NUM: usize = 0x30002;
+use crate::driver;
+pub const DRIVER_NUM: usize = driver::NUM::Udp as usize;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UDPEndpoint {
@@ -69,7 +70,7 @@ pub struct App {
 #[allow(dead_code)]
 pub struct UDPDriver<'a> {
     /// UDP sender
-    sender: &'a UDPSender<'a>,
+    sender: &'a dyn UDPSender<'a>,
 
     /// UDP receiver
     receiver: &'a UDPReceiver<'a>,
@@ -88,7 +89,7 @@ pub struct UDPDriver<'a> {
 
 impl<'a> UDPDriver<'a> {
     pub fn new(
-        sender: &'a UDPSender<'a>,
+        sender: &'a dyn UDPSender<'a>,
         receiver: &'a UDPReceiver<'a>,
         grant: Grant<App>,
         interface_list: &'static [IPAddr],
@@ -273,7 +274,7 @@ impl<'a> UDPDriver<'a> {
     #[inline]
     fn do_next_tx_immediate(&self, new_appid: AppId) -> ReturnCode {
         self.get_next_tx_if_idle()
-            .map(|appid| {
+            .map_or(ReturnCode::SUCCESS, |appid| {
                 if appid == new_appid {
                     let sync_result = self.perform_tx_sync(appid);
                     if sync_result == ReturnCode::SUCCESS {
@@ -285,7 +286,6 @@ impl<'a> UDPDriver<'a> {
                     ReturnCode::SUCCESS
                 }
             })
-            .unwrap_or(ReturnCode::SUCCESS)
     }
 
     #[inline]
@@ -530,15 +530,15 @@ impl<'a> Driver for UDPDriver<'a> {
                             });
                         }
                         if addr_already_bound {
-                            return ReturnCode::EBUSY;
+                            ReturnCode::EBUSY
                         } else {
                             requested_addr_opt = Some(requested_addr);
                             // If this point is reached, the requested addr is free and valid
                             app.bound_port = requested_addr_opt;
-                            return ReturnCode::SUCCESS;
+                            ReturnCode::SUCCESS
                         }
                     } else {
-                        return ReturnCode::EINVAL;
+                        ReturnCode::EINVAL
                     }
                 })
             }

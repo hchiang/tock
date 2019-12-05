@@ -183,7 +183,7 @@ pub enum SpiRole {
 
 /// Abstraction of the SPI Hardware
 pub struct SpiHw {
-    client: OptionalCell<&'static SpiMasterClient>,
+    client: OptionalCell<&'static dyn SpiMasterClient>,
     dma_read: OptionalCell<&'static DMAChannel>,
     dma_write: OptionalCell<&'static DMAChannel>,
     // keep track of which how many DMA transfers are pending to correctly
@@ -192,7 +192,7 @@ pub struct SpiHw {
     dma_length: Cell<usize>,
 
     // Slave client is distinct from master client
-    slave_client: OptionalCell<&'static SpiSlaveClient>,
+    slave_client: OptionalCell<&'static dyn SpiSlaveClient>,
     role: Cell<SpiRole>,
 
     baud_rate: Cell<u32>,
@@ -297,7 +297,7 @@ impl SpiHw {
         spi.registers.cr.write(Control::SPIDIS::SET);
 
         if self.role.get() == SpiRole::SpiSlave {
-            spi.registers.idr.write(InterruptFlags::NSSR::SET);; // Disable NSSR
+            spi.registers.idr.write(InterruptFlags::NSSR::SET); // Disable NSSR
         }
 
         self.client_index.map( |client_index|
@@ -545,7 +545,7 @@ impl SpiHw {
 impl spi::SpiMaster for SpiHw {
     type ChipSelect = u8;
 
-    fn set_client(&self, client: &'static SpiMasterClient) {
+    fn set_client(&self, client: &'static dyn SpiMasterClient) {
         self.client.set(client);
     }
 
@@ -673,7 +673,7 @@ impl spi::SpiMaster for SpiHw {
 
 impl spi::SpiSlave for SpiHw {
     // Set to None to disable the whole thing
-    fn set_client(&self, client: Option<&'static SpiSlaveClient>) {
+    fn set_client(&self, client: Option<&'static dyn SpiSlaveClient>) {
         self.slave_client.insert(client);
     }
 
@@ -766,11 +766,8 @@ impl DMAClient for SpiHw {
                     });
                 }
             }
-            // Callbacks did not request another operation
             if self.transfers_in_progress.get() == 0 {
-                //if //disabled {
                 self.disable();
-                //}
             }
         }
     }

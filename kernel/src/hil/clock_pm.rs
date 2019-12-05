@@ -27,7 +27,7 @@ pub trait ClockClient {
 
 pub trait ClockManager {
     //TODO how to make this visible to ClockClients as well?
-    fn register(&self, c:&'static ClockClient) -> ReturnCode;
+    fn register(&self, c:&'static dyn ClockClient) -> ReturnCode;
     fn enable_clock(&self, client_index:&'static ClientIndex) -> Result<u32, ReturnCode>;
     fn disable_clock(&self, client_index:&'static ClientIndex) -> ReturnCode;
 

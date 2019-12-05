@@ -23,7 +23,7 @@ const COMPUTE: u32      = 0x080;
 
 /// Data structure stored by ClockManager for each ClockClient
 struct ClockData {
-    client: OptionalCell<&'static ClockClient>,
+    client: OptionalCell<&'static dyn ClockClient>,
     client_index: Cell<&'static ClientIndex>,
     enabled: Cell<bool>,
     need_lock: Cell<bool>,
@@ -50,7 +50,7 @@ impl ClockData {
             max_freq: Cell::new(48000000),
         }
     }
-    fn initialize(&self, client: &'static ClockClient) {
+    fn initialize(&self, client: &'static dyn ClockClient) {
         self.client.set(client);
     }
 
@@ -188,27 +188,25 @@ impl ImixClockManager {
 
     fn convert_to_clock(&self, clock: u32) -> pm::SystemClockSource {
         // Roughly ordered in terms of least to most power consumption
-        let mut system_clock = pm::SystemClockSource::RcsysAt115kHz;
-        match clock {
-            0x02 => system_clock = pm::SystemClockSource::RcsysAt115kHz,
-            0x04 => system_clock = pm::SystemClockSource::RC1M,
-            0x08 => system_clock = pm::SystemClockSource::RCFAST{
-                                    frequency: pm::RcfastFrequency::Frequency4MHz},
-            0x10 => system_clock = pm::SystemClockSource::RCFAST{
-                                    frequency: pm::RcfastFrequency::Frequency8MHz},
-            0x20 => system_clock = pm::SystemClockSource::RCFAST{
-                                    frequency: pm::RcfastFrequency::Frequency12MHz},
-            0x40 => system_clock = pm::SystemClockSource::ExternalOscillator{
-                                    frequency: pm::OscillatorFrequency::Frequency16MHz,
-                                    startup_mode: pm::OscillatorStartup::FastStart},
-            0x80 => system_clock = pm::SystemClockSource::RC80M,
-            0x100 => system_clock = pm::SystemClockSource::DfllRc32kAt48MHz,
-            0x200 => system_clock = pm::SystemClockSource::PllExternalOscillatorAt48MHz{ 
-                                    frequency: pm::OscillatorFrequency::Frequency16MHz,
-                                    startup_mode: pm::OscillatorStartup::FastStart},
-            _ => system_clock = pm::SystemClockSource::RC80M,
+        return match clock {
+            0x02 => pm::SystemClockSource::RcsysAt115kHz,
+            0x04 => pm::SystemClockSource::RC1M,
+            0x08 => pm::SystemClockSource::RCFAST{
+                        frequency: pm::RcfastFrequency::Frequency4MHz},
+            0x10 => pm::SystemClockSource::RCFAST{
+                        frequency: pm::RcfastFrequency::Frequency8MHz},
+            0x20 => pm::SystemClockSource::RCFAST{
+                        frequency: pm::RcfastFrequency::Frequency12MHz},
+            0x40 => pm::SystemClockSource::ExternalOscillator{
+                        frequency: pm::OscillatorFrequency::Frequency16MHz,
+                        startup_mode: pm::OscillatorStartup::FastStart},
+            0x80 => pm::SystemClockSource::RC80M,
+            0x100 => pm::SystemClockSource::DfllRc32kAt48MHz,
+            0x200 => pm::SystemClockSource::PllExternalOscillatorAt48MHz{
+                        frequency: pm::OscillatorFrequency::Frequency16MHz,
+                        startup_mode: pm::OscillatorStartup::FastStart},
+            _ => pm::SystemClockSource::RC80M,
         }
-        return system_clock;
     }
 
     fn update_clock(&self) {
@@ -346,7 +344,7 @@ impl ChangeClock for ImixClockManager {
 }
 
 impl ClockManager for ImixClockManager {
-    fn register(&self, client:&'static ClockClient) -> ReturnCode {
+    fn register(&self, client:&'static dyn ClockClient) -> ReturnCode {
         let num_clients = self.num_clients.get();
         if num_clients >= NUM_CLOCK_CLIENTS {
             return ReturnCode::ENOMEM;

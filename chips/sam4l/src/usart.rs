@@ -370,10 +370,10 @@ pub enum UsartMode {
 #[derive(Copy, Clone)]
 enum UsartClient<'a> {
     Uart(
-        Option<&'a uart::ReceiveClient>,
-        Option<&'a uart::TransmitClient>,
+        Option<&'a dyn uart::ReceiveClient>,
+        Option<&'a dyn uart::TransmitClient>,
     ),
-    SpiMaster(&'a spi::SpiMasterClient),
+    SpiMaster(&'a dyn spi::SpiMasterClient),
 }
 
 pub struct USART<'a> {
@@ -394,7 +394,7 @@ pub struct USART<'a> {
 
     client: OptionalCell<UsartClient<'a>>,
 
-    spi_chip_select: OptionalCell<&'a hil::gpio::Pin>,
+    spi_chip_select: OptionalCell<&'a dyn hil::gpio::Pin>,
 
     baud_rate: Cell<u32>,
     client_index: OptionalCell<&'static ClientIndex>,
@@ -895,7 +895,7 @@ impl dma::DMAClient for USART<'a> {
 
 /// Implementation of kernel::uart
 impl uart::Receive<'a> for USART<'a> {
-    fn set_receive_client(&self, client: &'a uart::ReceiveClient) {
+    fn set_receive_client(&self, client: &'a dyn uart::ReceiveClient) {
         if let Some(UsartClient::Uart(_rx, Some(tx))) = self.client.take() {
             self.client.set(UsartClient::Uart(Some(client), Some(tx)));
         } else {
@@ -975,7 +975,7 @@ impl uart::Transmit<'a> for USART<'a> {
         }
     }
 
-    fn set_transmit_client(&self, client: &'a uart::TransmitClient) {
+    fn set_transmit_client(&self, client: &'a dyn uart::TransmitClient) {
         if let Some(UsartClient::Uart(Some(rx), _tx)) = self.client.take() {
             self.client.set(UsartClient::Uart(Some(rx), Some(client)));
         } else {
@@ -1061,7 +1061,7 @@ impl uart::ReceiveAdvanced<'a> for USART<'a> {
 
 /// SPI
 impl spi::SpiMaster for USART<'a> {
-    type ChipSelect = Option<&'static hil::gpio::Pin>;
+    type ChipSelect = Option<&'static dyn hil::gpio::Pin>;
 
     fn init(&self) {
         let usart = &USARTRegManager::new(&self);
@@ -1084,13 +1084,13 @@ impl spi::SpiMaster for USART<'a> {
         usart.registers.ttgr.write(TxTimeGuard::TG.val(4));
     }
 
-    fn set_client(&self, client: &'static spi::SpiMasterClient) {
+    fn set_client(&self, client: &'static dyn spi::SpiMasterClient) {
         let c = UsartClient::SpiMaster(client);
         self.client.set(c);
     }
 
     fn is_busy(&self) -> bool {
-        return false;
+        false
     }
 
     fn read_write_bytes(

@@ -11,10 +11,10 @@ struct DBGRegisters {
 }
 
 const DWT: StaticRef<DWTRegisters> = unsafe { StaticRef::new(0xE0001000 as *const _) };
-const DEMCR: StaticRef<ReadWrite<u32>> = unsafe { StaticRef::new(0xE000EDFC as *const _) };
+const DEMCR: StaticRef<DBGRegisters> = unsafe { StaticRef::new(0xE000EDFC as *const _) };
 
 pub unsafe fn reset_timer() {
-    DEMCR.set(DEMCR.get() | 0x01000000);
+    DEMCR.demcr.set(DEMCR.demcr.get() | 0x01000000);
     DWT.cycnt.set(0); // reset the counter
     DWT.ctrl.set(0); // disable counter;
 }

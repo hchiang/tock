@@ -10,24 +10,20 @@ extern crate enum_primitive;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
-use capsules::virtual_uart::{MuxUart, UartDevice};
+use capsules::virtual_uart::MuxUart;
 use cc26x2::aon;
 use cc26x2::prcm;
 use cc26x2::pwm;
 use kernel::capabilities;
+use kernel::component::Component;
 use kernel::hil;
 use kernel::hil::entropy::Entropy32;
-use kernel::hil::gpio::InterruptMode;
-use kernel::hil::gpio::Pin;
-use kernel::hil::gpio::PinCtl;
+use kernel::hil::gpio;
 use kernel::hil::i2c::I2CMaster;
 use kernel::hil::rng::Rng;
 
-#[macro_use]
 pub mod io;
 
-#[allow(dead_code)]
-mod ccfg_test;
 #[allow(dead_code)]
 mod i2c_tests;
 #[allow(dead_code)]
@@ -41,7 +37,8 @@ const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultRespons
 
 // Number of concurrent processes this platform supports.
 const NUM_PROCS: usize = 3;
-static mut PROCESSES: [Option<&'static kernel::procs::ProcessType>; NUM_PROCS] = [None, None, None];
+static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
+    [None, None, None];
 
 #[link_section = ".app_memory"]
 // Give half of RAM to be dedicated APP memory
@@ -53,13 +50,13 @@ static mut APP_MEMORY: [u8; 0x10000] = [0; 0x10000];
 pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 
 pub struct Platform {
-    gpio: &'static capsules::gpio::GPIO<'static, cc26x2::gpio::GPIOPin>,
-    led: &'static capsules::led::LED<'static, cc26x2::gpio::GPIOPin>,
+    gpio: &'static capsules::gpio::GPIO<'static>,
+    led: &'static capsules::led::LED<'static>,
     console: &'static capsules::console::Console<'static>,
-    button: &'static capsules::button::Button<'static, cc26x2::gpio::GPIOPin>,
+    button: &'static capsules::button::Button<'static>,
     alarm: &'static capsules::alarm::AlarmDriver<
         'static,
-        capsules::virtual_alarm::VirtualMuxAlarm<'static, cc26x2::rtc::Rtc>,
+        capsules::virtual_alarm::VirtualMuxAlarm<'static, cc26x2::rtc::Rtc<'static>>,
     >,
     rng: &'static capsules::rng::RngDriver<'static>,
     i2c_master: &'static capsules::i2c_master::I2CMasterDriver<cc26x2::i2c::I2CMaster<'static>>,
@@ -69,7 +66,7 @@ pub struct Platform {
 impl kernel::Platform for Platform {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
     where
-        F: FnOnce(Option<&kernel::Driver>) -> R,
+        F: FnOnce(Option<&dyn kernel::Driver>) -> R,
     {
         match driver_num {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
@@ -182,7 +179,7 @@ pub unsafe fn reset_handler() {
     // LEDs
     let led_pins = static_init!(
         [(
-            &'static cc26x2::gpio::GPIOPin,
+            &'static dyn kernel::hil::gpio::Pin,
             capsules::led::ActivationMode
         ); 2],
         [
@@ -197,41 +194,51 @@ pub unsafe fn reset_handler() {
         ]
     );
     let led = static_init!(
-        capsules::led::LED<'static, cc26x2::gpio::GPIOPin>,
+        capsules::led::LED<'static>,
         capsules::led::LED::new(led_pins)
     );
 
     // BUTTONS
     let button_pins = static_init!(
-        [(&'static cc26x2::gpio::GPIOPin, capsules::button::GpioMode); 2],
+        [(
+            &'static dyn gpio::InterruptValuePin,
+            capsules::button::GpioMode
+        ); 2],
         [
             (
-                &cc26x2::gpio::PORT[pinmap.button1],
+                static_init!(
+                    gpio::InterruptValueWrapper,
+                    gpio::InterruptValueWrapper::new(&cc26x2::gpio::PORT[pinmap.button1])
+                )
+                .finalize(),
                 capsules::button::GpioMode::LowWhenPressed
-            ), // Button 1
+            ),
             (
-                &cc26x2::gpio::PORT[pinmap.button2],
+                static_init!(
+                    gpio::InterruptValueWrapper,
+                    gpio::InterruptValueWrapper::new(&cc26x2::gpio::PORT[pinmap.button2])
+                )
+                .finalize(),
                 capsules::button::GpioMode::LowWhenPressed
-            ), // Button 2
+            )
         ]
     );
+
     let button = static_init!(
-        capsules::button::Button<'static, cc26x2::gpio::GPIOPin>,
+        capsules::button::Button<'static>,
         capsules::button::Button::new(
             button_pins,
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
 
-    let mut count = 0;
-    for &(btn, _) in button_pins.iter() {
-        btn.set_input_mode(hil::gpio::InputMode::PullUp);
-        btn.enable_interrupt(count, InterruptMode::FallingEdge);
-        btn.set_client(button);
-        count += 1;
+    for (pin, _) in button_pins.iter() {
+        pin.set_client(button);
+        pin.set_floating_state(hil::gpio::FloatingState::PullUp);
     }
 
     // UART
+    cc26x2::uart::UART0.initialize();
 
     // Create a shared UART channel for the console and for kernel debug.
     let uart_mux = static_init!(
@@ -242,45 +249,14 @@ pub unsafe fn reset_handler() {
             115200
         )
     );
+    uart_mux.initialize();
     hil::uart::Receive::set_receive_client(&cc26x2::uart::UART0, uart_mux);
     hil::uart::Transmit::set_transmit_client(&cc26x2::uart::UART0, uart_mux);
 
-    // Create a UartDevice for the console.
-    let console_uart = static_init!(UartDevice, UartDevice::new(uart_mux, true));
-    console_uart.setup();
-
-    cc26x2::uart::UART0.initialize();
-
-    let console = static_init!(
-        capsules::console::Console<'static>,
-        capsules::console::Console::new(
-            console_uart,
-            &mut capsules::console::WRITE_BUF,
-            &mut capsules::console::READ_BUF,
-            board_kernel.create_grant(&memory_allocation_capability)
-        )
-    );
-    kernel::hil::uart::Transmit::set_transmit_client(console_uart, console);
-    kernel::hil::uart::Receive::set_receive_client(console_uart, console);
-
-    // Create virtual device for kernel debug.
-    let debugger_uart = static_init!(UartDevice, UartDevice::new(uart_mux, false));
-    debugger_uart.setup();
-    let debugger = static_init!(
-        kernel::debug::DebugWriter,
-        kernel::debug::DebugWriter::new(
-            debugger_uart,
-            &mut kernel::debug::OUTPUT_BUF,
-            &mut kernel::debug::INTERNAL_BUF,
-        )
-    );
-    hil::uart::Transmit::set_transmit_client(debugger_uart, debugger);
-
-    let debug_wrapper = static_init!(
-        kernel::debug::DebugWriterWrapper,
-        kernel::debug::DebugWriterWrapper::new(debugger)
-    );
-    kernel::debug::set_debug_writer_wrapper(debug_wrapper);
+    // Setup the console.
+    let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
+    // Create the debugger object that handles calls to `debug!()`.
+    components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
 
     cc26x2::i2c::I2C0.initialize();
 
@@ -298,20 +274,25 @@ pub unsafe fn reset_handler() {
 
     // Setup for remaining GPIO pins
     let gpio_pins = static_init!(
-        [&'static cc26x2::gpio::GPIOPin; 1],
+        [&'static dyn kernel::hil::gpio::InterruptValuePin; 1],
         [
             // This is the order they appear on the launchxl headers.
             // Pins 5, 8, 11, 29, 30
-            &cc26x2::gpio::PORT[pinmap.gpio0],
+            static_init!(
+                gpio::InterruptValueWrapper,
+                gpio::InterruptValueWrapper::new(&cc26x2::gpio::PORT[pinmap.gpio0])
+            )
+            .finalize()
         ]
     );
     let gpio = static_init!(
-        capsules::gpio::GPIO<'static, cc26x2::gpio::GPIOPin>,
+        capsules::gpio::GPIO<'static>,
         capsules::gpio::GPIO::new(
             gpio_pins,
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
+
     for pin in gpio_pins.iter() {
         pin.set_client(gpio);
     }
@@ -323,7 +304,7 @@ pub unsafe fn reset_handler() {
         capsules::virtual_alarm::MuxAlarm<'static, cc26x2::rtc::Rtc>,
         capsules::virtual_alarm::MuxAlarm::new(&cc26x2::rtc::RTC)
     );
-    rtc.set_client(mux_alarm);
+    hil::time::Alarm::set_client(rtc, mux_alarm);
 
     let virtual_alarm1 = static_init!(
         capsules::virtual_alarm::VirtualMuxAlarm<'static, cc26x2::rtc::Rtc>,
@@ -339,7 +320,7 @@ pub unsafe fn reset_handler() {
             board_kernel.create_grant(&memory_allocation_capability)
         )
     );
-    virtual_alarm1.set_client(alarm);
+    hil::time::Alarm::set_client(virtual_alarm1, alarm);
 
     let entropy_to_random = static_init!(
         capsules::rng::Entropy32ToRandom<'static>,
