@@ -1,6 +1,5 @@
 use crate::returncode::ReturnCode;
 
-//TODO: make ClientIndex type/generic so that it can't be created outside of ClockManager
 pub struct ClientIndex {
     client_index: usize,
 }
@@ -16,18 +15,31 @@ impl ClientIndex {
     }
 }
 
+/// Chip specific implementations
+pub trait ClockConfigs {
+    fn get_num_clock_sources(&self) -> u32;
+    fn get_max_freq(&self) -> u32;
+    fn get_all_clocks(&self) -> u32;
+    fn get_default(&self) -> u32;
+    fn get_compute(&self) -> u32;
+    
+    fn get_clockmask(&self, min_freq: u32, max_freq: u32) -> u32;
+    fn get_clock_frequency(&self, clock: u32) -> u32;
+    fn get_system_frequency(&self) -> u32;
+    fn change_system_clock(&self, clock:u32);
+}
+
 /// Implemented by each peripheral
 pub trait ClockClient {
     /// The ClockManager will call this function to report a clock change
-    fn set_client_index(&self, client_index: &'static ClientIndex);
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex);
     fn configure_clock(&self, frequency: u32);
     fn clock_enabled(&self);
     fn clock_disabled(&self);
 }
 
 pub trait ClockManager {
-    //TODO how to make this visible to ClockClients as well?
-    fn register(&self, c:&'static dyn ClockClient) -> ReturnCode;
+    fn register(&'static self, c:&'static dyn ClockClient) -> ReturnCode;
     fn enable_clock(&self, client_index:&'static ClientIndex) -> Result<u32, ReturnCode>;
     fn disable_clock(&self, client_index:&'static ClientIndex) -> ReturnCode;
 

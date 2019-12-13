@@ -16,7 +16,6 @@ use kernel::ReturnCode;
 use crate::dma;
 use crate::pm;
 use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 // Register map for SAM4L USART
 #[repr(C)]
@@ -397,6 +396,7 @@ pub struct USART<'a> {
     spi_chip_select: OptionalCell<&'a dyn hil::gpio::Pin>,
 
     baud_rate: Cell<u32>,
+    clock_manager: OptionalCell<&'static dyn ClockManager>,
     client_index: OptionalCell<&'static ClientIndex>,
     callback_tx_data: TakeCell<'static, [u8]>,
     callback_tx_len: Cell<usize>,
@@ -461,6 +461,7 @@ impl USART<'a> {
             spi_chip_select: OptionalCell::empty(),
 
             baud_rate: Cell::new(0),
+            clock_manager: OptionalCell::empty(),
             client_index: OptionalCell::empty(),
             
             callback_tx_data: TakeCell::empty(),
@@ -633,9 +634,9 @@ impl USART<'a> {
             self.callback_tx_len.set(0);
             if self.callback_rx_len.get() == 0 {
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
+                    self.clock_manager.map( |clock_manager|
+                        clock_manager.disable_clock(client_index)
+                    )
                 );
             }
 
@@ -726,9 +727,9 @@ impl USART<'a> {
                 let uart_baud_rate = 8 * baud_rate;
                 
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.set_min_frequency(client_index, uart_baud_rate);
-                    }
+                    self.clock_manager.map( |clock_manager|
+                        clock_manager.set_min_frequency(client_index, uart_baud_rate)
+                    )
                 );
 
                 let cd = system_frequency / uart_baud_rate;
@@ -828,9 +829,9 @@ impl dma::DMAClient for USART<'a> {
                     self.callback_rx_len.set(0);
                     if self.callback_tx_len.get() == 0 {
                         self.client_index.map( |client_index|
-                            unsafe {
-                                clock_pm::CM.disable_clock(client_index)
-                            }
+                            self.clock_manager.map( |clock_manager|
+                                clock_manager.disable_clock(client_index)
+                            )
                         );
                     }
 
@@ -956,9 +957,9 @@ impl uart::Transmit<'a> for USART<'a> {
             self.callback_tx_data.replace(tx_buffer);
             self.callback_tx_len.replace(tx_len);
             self.client_index.map( |client_index|
-                unsafe {
-                    clock_pm::CM.enable_clock(client_index)
-                }
+                self.clock_manager.map( |clock_manager|
+                    clock_manager.enable_clock(client_index)
+                )
             );
             (ReturnCode::SUCCESS, None)
 
@@ -1282,11 +1283,10 @@ impl spi::SpiMaster for USART<'a> {
 }
 
 impl ClockClient for USART<'a> {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
+        self.clock_manager.set(clock_manager);
         self.client_index.set(client_index);
-        unsafe {
-            clock_pm::CM.set_min_frequency(client_index, 8*self.baud_rate.get());
-        }
+        clock_manager.set_min_frequency(client_index, 8*self.baud_rate.get());
     }
     fn configure_clock(&self, frequency: u32) {
         let usart = &USARTRegManager::new(&self);

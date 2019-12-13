@@ -23,7 +23,6 @@ use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
 use kernel::{ClockInterface, ReturnCode};
 use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 #[repr(C)]
 pub struct SpiRegisters {
@@ -199,6 +198,7 @@ pub struct SpiHw {
     callback_write_buffer: TakeCell<'static, [u8]>,
     callback_read_buffer: TakeCell<'static, [u8]>,
     callback_len: Cell<usize>,
+    clock_manager: OptionalCell<&'static dyn ClockManager>,
     client_index: OptionalCell<&'static ClientIndex>,
 }
 
@@ -248,6 +248,7 @@ impl SpiHw {
             callback_write_buffer: TakeCell::empty(),
             callback_read_buffer: TakeCell::empty(),
             callback_len: Cell::new(0),
+            clock_manager: OptionalCell::empty(),
             client_index: OptionalCell::empty(),
         }
     }
@@ -301,9 +302,9 @@ impl SpiHw {
         }
 
         self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.disable_clock(client_index)
-            }
+            self.clock_manager.map( |clock_manager|
+                 clock_manager.disable_clock(client_index)
+            )
         );
     }
 
@@ -333,12 +334,12 @@ impl SpiHw {
 
         if real_rate != self.baud_rate.get() {
             self.baud_rate.set(real_rate);
-            self.client_index.map( |client_index| {
-                unsafe {
-                clock_pm::CM.set_min_frequency(client_index, real_rate);
-                clock_pm::CM.set_max_frequency(client_index, real_rate*255);
-                }
-            });
+            self.client_index.map( |client_index| 
+                self.clock_manager.map( |clock_manager| {
+                    clock_manager.set_min_frequency(client_index, real_rate);
+                    clock_manager.set_max_frequency(client_index, real_rate*255);
+                })
+            );
         }
 
         if real_rate > clock {
@@ -616,9 +617,9 @@ impl spi::SpiMaster for SpiHw {
         self.callback_len.set(len);
 
         self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.enable_clock(client_index)
-            }
+            self.clock_manager.map( |clock_manager|
+                clock_manager.enable_clock(client_index)
+            )
         );
         return ReturnCode::SUCCESS;
     }
@@ -774,11 +775,10 @@ impl DMAClient for SpiHw {
 }
 
 impl ClockClient for SpiHw {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
+        self.clock_manager.set(clock_manager);
         self.client_index.set(client_index);
-        unsafe {
-            clock_pm::CM.set_min_frequency(client_index, self.baud_rate.get());
-        }
+        clock_manager.set_min_frequency(client_index, self.baud_rate.get());
     }
     fn configure_clock(&self, frequency: u32) {
         self.set_baud_rate(self.baud_rate.get(), frequency);

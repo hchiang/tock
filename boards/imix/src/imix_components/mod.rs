@@ -1,6 +1,7 @@
 pub mod adc;
 pub mod analog_comparator;
 pub mod button;
+pub mod clock_pm;
 pub mod fxos8700;
 pub mod gpio;
 pub mod led;
@@ -13,6 +14,7 @@ pub mod usb;
 pub use self::adc::AdcComponent;
 pub use self::analog_comparator::AcComponent;
 pub use self::button::ButtonComponent;
+pub use self::clock_pm::ClockManagerComponent;
 pub use self::fxos8700::NineDofComponent;
 pub use self::gpio::GpioComponent;
 pub use self::led::LedComponent;

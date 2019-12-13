@@ -19,7 +19,6 @@ use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ClockInterface;
 use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 // Listing of all registers related to the TWIM peripheral.
 // Section 27.9 of the datasheet
@@ -567,6 +566,7 @@ pub struct I2CHw {
     callback_data: TakeCell<'static, [u8]>,
     callback_write_len: Cell<u8>,
     callback_read_len: Cell<u8>,
+    clock_manager: OptionalCell<&'static dyn ClockManager>,
     client_index: OptionalCell<&'static ClientIndex>,
 }
 
@@ -702,6 +702,7 @@ impl I2CHw {
             callback_data: TakeCell::empty(),
             callback_write_len: Cell::new(0),
             callback_read_len: Cell::new(0),
+            clock_manager: OptionalCell::empty(),
             client_index: OptionalCell::empty(),
         }
     }
@@ -796,9 +797,9 @@ impl I2CHw {
             None => {
                 {
                     self.client_index.map( |client_index|
-                        unsafe {
-                            clock_pm::CM.disable_clock(client_index)
-                        }
+                        self.clock_manager.map( |clock_manager|
+                            clock_manager.disable_clock(client_index)
+                        )
                     );
 
                     let twim = &TWIMRegisterManager::new(&self);
@@ -1328,9 +1329,9 @@ impl I2CHw {
         self.callback_read_len.set(read_len);
 
         self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.enable_clock(client_index)
-            }
+            self.clock_manager.map( |clock_manager|
+                clock_manager.enable_clock(client_index)
+            )
         );
     }
 }
@@ -1372,9 +1373,9 @@ impl hil::i2c::I2CMaster for I2CHw {
         twim.registers.cr.write(Control::MDIS::SET);
         self.disable_interrupts(twim);
         self.client_index.map( |client_index|
-            unsafe {
-            clock_pm::CM.disable_clock(client_index)
-            }
+            self.clock_manager.map( |clock_manager|
+                clock_manager.disable_clock(client_index)
+            )
         );
     }
 
@@ -1458,12 +1459,11 @@ impl hil::i2c::I2CSlave for I2CHw {
 impl hil::i2c::I2CMasterSlave for I2CHw {}
 
 impl ClockClient for I2CHw {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
+        self.clock_manager.set(clock_manager);
         self.client_index.set(client_index);
-        unsafe { 
-            clock_pm::CM.set_min_frequency(client_index, 4*400000); 
-            clock_pm::CM.set_need_lock(client_index, false);
-        }
+        clock_manager.set_min_frequency(client_index, 4*400000); 
+        clock_manager.set_need_lock(client_index, false);
     }
     fn configure_clock(&self, frequency: u32) {
         let twim = &TWIMRegisterManager::new(&self);

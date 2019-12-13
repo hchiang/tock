@@ -32,7 +32,6 @@ use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
 use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
 #[repr(C)]
@@ -414,6 +413,7 @@ pub struct FLASHCALW {
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
 
+    clock_manager: OptionalCell<&'static dyn ClockManager>,
     client_index: OptionalCell<&'static ClientIndex>,
 }
 
@@ -455,6 +455,7 @@ impl FLASHCALW {
             client: OptionalCell::empty(),
             current_state: Cell::new(FlashState::Unconfigured),
             buffer: TakeCell::empty(),
+            clock_manager: OptionalCell::empty(),
             client_index: OptionalCell::empty(),
         }
     }
@@ -534,9 +535,9 @@ impl FLASHCALW {
                 self.current_state.set(FlashState::Ready);
 
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
+                    self.clock_manager.map( |clock_manager|
+                        clock_manager.disable_clock(client_index)
+                    )
                 );
 
                 self.client.map(|client| {
@@ -550,10 +551,10 @@ impl FLASHCALW {
                     .set(FlashState::WriteUnlocking2 { page: page });
 
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.set_min_frequency(client_index, 1000000);
-                        clock_pm::CM.enable_clock(client_index)
-                    }
+                    self.clock_manager.map( |clock_manager| {
+                        clock_manager.set_min_frequency(client_index, 1000000);
+                        clock_manager.enable_clock(client_index)
+                    })
                 );
             }
             FlashState::WriteUnlocking2 { page } => {
@@ -579,9 +580,9 @@ impl FLASHCALW {
                 self.current_state.set(FlashState::Ready);
 
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
+                    self.clock_manager.map( |clock_manager|
+                        clock_manager.disable_clock(client_index)
+                    )
                 );
 
                 self.client.map(|client| {
@@ -594,10 +595,10 @@ impl FLASHCALW {
                 self.current_state.set(FlashState::EraseUnlocking2 { page: page});
 
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.set_min_frequency(client_index, 1000000);
-                        clock_pm::CM.enable_clock(client_index)
-                    }
+                    self.clock_manager.map( |clock_manager| {
+                        clock_manager.set_min_frequency(client_index, 1000000);
+                        clock_manager.enable_clock(client_index)
+                    })
                 );
             }
             FlashState::EraseUnlocking2 { page } => {
@@ -608,9 +609,9 @@ impl FLASHCALW {
                 self.current_state.set(FlashState::Ready);
 
                 self.client_index.map( |client_index|
-                    unsafe {
-                        clock_pm::CM.disable_clock(client_index)
-                    }
+                    self.clock_manager.map( |clock_manager|
+                        clock_manager.disable_clock(client_index) 
+                    )
                 );
 
                 self.client.map(|client| {
@@ -911,10 +912,10 @@ impl FLASHCALW {
         self.buffer.replace(buffer);
 
         self.client_index.map( |client_index|
-            unsafe {
-                clock_pm::CM.set_min_frequency(client_index, 40000000);
-                clock_pm::CM.enable_clock(client_index);
-            }
+            self.clock_manager.map( |clock_manager| {
+                clock_manager.set_min_frequency(client_index, 40000000);
+                clock_manager.enable_clock(client_index);
+            })
         );
 
         // This is kind of strange, but because read() in this case is
@@ -982,11 +983,10 @@ impl hil::flash::Flash for FLASHCALW {
 }
 
 impl ClockClient for FLASHCALW {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
+        self.clock_manager.set(clock_manager);
         self.client_index.set(client_index);
-        unsafe { 
-            clock_pm::CM.set_need_lock(client_index, false);
-        }
+        clock_manager.set_need_lock(client_index, false);
     }
     fn configure_clock(&self, _frequency: u32) {}
     fn clock_enabled(&self) {

@@ -28,7 +28,6 @@ use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
 use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
-use crate::clock_pm;
 
 /// Representation of an ADC channel on the SAM4L.
 pub struct AdcChannel {
@@ -136,6 +135,7 @@ pub struct Adc {
     callback_frequency: Cell<u32>, 
     callback_buffer: TakeCell<'static, [u16]>,
     callback_length: Cell<usize>,
+    clock_manager: OptionalCell<&'static dyn ClockManager>,
     client_index: OptionalCell<&'static ClientIndex>,
 }
 
@@ -397,6 +397,7 @@ impl Adc {
             callback_frequency: Cell::new(0),
             callback_buffer: TakeCell::empty(),
             callback_length: Cell::new(0),
+            clock_manager: OptionalCell::empty(),
             client_index: OptionalCell::empty(),
         }
     }
@@ -897,9 +898,9 @@ impl hil::adc::Adc for Adc {
             self.disable();
 
             self.client_index.map( |client_index|
-                unsafe {
-                clock_pm::CM.disable_clock(client_index)
-                }
+                self.clock_manager.map( |clock_manager|
+                    clock_manager.disable_clock(client_index)
+                )
             );
 
             // stop DMA transfer if going. This should safely return a None if
@@ -990,12 +991,12 @@ impl hil::adc::AdcHighSpeed for Adc {
             self.next_dma_length.set(length2);
 
             self.disable();
-            self.client_index.map( |client_index| {
-                unsafe {
-                clock_pm::CM.set_min_frequency(client_index, frequency*32);
-                clock_pm::CM.enable_clock(client_index);
-                }
-            });
+            self.client_index.map( |client_index| 
+                self.clock_manager.map( |clock_manager| {
+                    clock_manager.set_min_frequency(client_index, frequency*32);
+                    clock_manager.enable_clock(client_index);
+                })
+            );
 
             (ReturnCode::SUCCESS, None, None)
         }
@@ -1133,7 +1134,8 @@ impl dma::DMAClient for Adc {
 }
 
 impl ClockClient for Adc {
-    fn set_client_index(&self, client_index: &'static ClientIndex) {
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
+        self.clock_manager.set(clock_manager);
         self.client_index.set(client_index);
     }
     fn configure_clock(&self, frequency: u32) {

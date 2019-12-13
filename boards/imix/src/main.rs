@@ -19,11 +19,11 @@ use capsules::virtual_uart::MuxUart;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::hil;
+use kernel::hil::clock_pm::{ChangeClock, ClockManager};
 use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
 use kernel::hil::Controller;
-use kernel::hil::clock_pm::{ClockManager, ChangeClock, ClientIndex};
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
 
@@ -40,6 +40,7 @@ use components::spi::{SpiComponent, SpiSyscallComponent};
 use imix_components::adc::AdcComponent;
 use imix_components::analog_comparator::AcComponent;
 use imix_components::button::ButtonComponent;
+use imix_components::clock_pm::ClockManagerComponent;
 use imix_components::fxos8700::NineDofComponent;
 use imix_components::gpio::GpioComponent;
 use imix_components::led::LedComponent;
@@ -426,12 +427,13 @@ pub unsafe fn reset_handler() {
     )
     .finalize(());
 
-    sam4l::clock_pm::CM.register(&sam4l::usart::USART3);
-    sam4l::clock_pm::CM.register(&sam4l::adc::ADC0);
-    sam4l::clock_pm::CM.register(&sam4l::i2c::I2C2);
-    sam4l::clock_pm::CM.register(&sam4l::spi::SPI);
-    sam4l::clock_pm::CM.register(&sam4l::gpio::PC[31]); //D2
-    sam4l::clock_pm::CM.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+    let clock_manager = ClockManagerComponent::new(&sam4l::clock_pm::ImixCM).finalize(());
+    clock_manager.register(&sam4l::usart::USART3);
+    clock_manager.register(&sam4l::adc::ADC0);
+    clock_manager.register(&sam4l::i2c::I2C2);
+    clock_manager.register(&sam4l::spi::SPI);
+    clock_manager.register(&sam4l::gpio::PC[31]); //D2
+    clock_manager.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
         //pconsole,
@@ -467,7 +469,7 @@ pub unsafe fn reset_handler() {
     // initialization to work.
     rf233.reset();
     rf233.start();
-    sam4l::clock_pm::CM.change_clock();
+    clock_manager.change_clock();
 
     //imix.pconsole.start();
 
@@ -513,13 +515,13 @@ pub unsafe fn reset_handler() {
         &process_mgmt_cap,
     );
 
-    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap, &sam4l::clock_pm::CM);
+    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap, clock_manager);
 }
 
-struct Dummy;
-impl kernel::hil::clock_pm::ClockClient for Dummy {
-    fn set_client_index(&self, _client_index: &'static ClientIndex) {}
-    fn configure_clock(&self, _frequency: u32) {}
-    fn clock_enabled(&self) {}
-    fn clock_disabled(&self) {}
-}
+//struct Dummy;
+//impl kernel::hil::clock_pm::ClockClient for Dummy {
+//    fn setup_client(&self, _clock_manager: &'static dyn ClockManager, _client_index: &'static ClientIndex) {}
+//    fn configure_clock(&self, _frequency: u32) {}
+//    fn clock_enabled(&self) {}
+//    fn clock_disabled(&self) {}
+//}
