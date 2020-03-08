@@ -322,7 +322,10 @@ impl ClockManager for ClockManagement<'a> {
         // The current clock is incompatible
         // This also captures the case where no peripherals are running
         //      if the peripheral's last bit is not set 
-        if client_clocks & self.current_clock.get() == 0 {
+        // Or the requesting client can use a lower power clock than current clock
+        let current_clock = self.current_clock.get();
+        if client_clocks & current_clock == 0 || 
+            client_clocks % current_clock != 0 {
             self.change_clock.set(true);
             self.change_clockmask.set(next_clockmask);
         }
