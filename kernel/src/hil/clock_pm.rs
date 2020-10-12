@@ -15,6 +15,26 @@ impl ClientIndex {
     }
 }
 
+pub struct IntermediateList {
+    intermediate_clocks: u32,
+    end_clocks: u32,
+}
+
+impl IntermediateList {
+    pub const fn new(intermediate_clocks: u32, end_clocks: u32) -> IntermediateList {
+        IntermediateList{
+            intermediate_clocks: intermediate_clocks,
+            end_clocks: end_clocks,
+        }
+    }
+    pub fn get_intermediates(&self) -> u32 {
+        self.intermediate_clocks
+    }
+    pub fn get_ends(&self) -> u32 {
+        self.end_clocks
+    }
+}
+
 /// Chip specific implementations
 pub trait ClockConfigs {
     fn get_num_clock_sources(&self) -> u32;
@@ -27,6 +47,8 @@ pub trait ClockConfigs {
     fn get_clock_frequency(&self, clock: u32) -> u32;
     fn get_system_frequency(&self) -> u32;
     fn change_system_clock(&self, clock:u32);
+
+    fn get_intermediates_list(&self, clock:u32) -> IntermediateList;
 }
 
 /// Implemented by each peripheral

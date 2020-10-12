@@ -167,8 +167,18 @@ impl ClockManagement<'a> {
         self.lock_count.set(self.lock_count.get()+1);
         self.change_clock.set(false);
 
-        // Find a compatible clock
+        // Find a clock compatible with running peripherals
         let mut clockmask = self.nolock_clockmask.get();
+
+        // Remove options that need to go through incompatible intermediates
+        let intermediates = self.configs.get_intermediates_list(self.current_clock.get());
+        if intermediates.get_intermediates() != 0 {
+            if clockmask & intermediates.get_intermediates()== 0 {
+                clockmask = clockmask & !intermediates.get_ends();
+                if clockmask == 0 { return; }
+            }
+        }
+
         let mut change_clockmask = self.configs.get_default();
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
@@ -198,6 +208,8 @@ impl ClockManagement<'a> {
             }
         }
         self.change_clockmask.set(change_clockmask);
+        // comparing it to 0x2 is speciality to SAM4L, move into get_compute?
+        //TODO make sure you're passing in a clock and not just the 1 bit for intermediates
         if self.compute_counter.get() > 0 && clockmask & self.configs.get_compute() != 0 && clockmask & 0x2 != 0 {
             clockmask = 0x1;
         }
@@ -212,11 +224,11 @@ impl ClockManagement<'a> {
         }
 
         let clock_changed = self.current_clock.get() != clock;
-        self.current_clock.set(clock);
 
         // Change the clock
+        let mut system_freq = 0;
         if clock_changed {
-            let system_freq = self.configs.get_clock_frequency(clock);
+            system_freq = self.configs.get_clock_frequency(clock);
             let current_freq = self.configs.get_system_frequency();
             if current_freq < system_freq {
                 for i in 0..self.num_clients.get() { 
@@ -224,6 +236,20 @@ impl ClockManagement<'a> {
                         self.clients[i].configure_clock(system_freq);
                     }
                 } 
+            }
+
+            //if intermediate clock change needed, do it here
+            //future work: if intermediate clock is faster than begin and end clock, additional configure_clock
+            let mut intermediate_clock = 0;
+            if intermediates.get_ends() & clock != 0 {
+                intermediate_clock = intermediates.get_intermediates() & self.nolock_clockmask.get();
+                for i in 0..self.configs.get_num_clock_sources() {
+                    if (intermediate_clock >> i) & 0b1 == 1 {
+                        intermediate_clock = 1 << i;
+                        break;
+                    } 
+                }
+                self.configs.change_system_clock(intermediate_clock);
             }
             self.configs.change_system_clock(clock);
             if current_freq > system_freq {
@@ -235,6 +261,7 @@ impl ClockManagement<'a> {
             }
         }
 
+        self.current_clock.set(clock);
         for i in 0..self.num_clients.get() { 
             if !self.clients[i].get_enabled() {
                 continue;
@@ -243,12 +270,12 @@ impl ClockManagement<'a> {
             if clock & self.clients[i].get_clockmask() != 0 {
                 if self.clients[i].get_need_lock() {
                     self.lock_count.set(self.lock_count.get()+1);
-                    self.clients[i].configure_clock(0);
+                    self.clients[i].configure_clock(system_freq);
                     self.clients[i].client_enabled();
                 }
                 else if !self.clients[i].get_running() {
                     self.clients[i].set_running(true);
-                    self.clients[i].configure_clock(0);
+                    self.clients[i].configure_clock(system_freq);
                     self.clients[i].client_enabled();
                 }
             }

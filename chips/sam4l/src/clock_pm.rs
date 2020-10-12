@@ -1,3 +1,4 @@
+use core::cell::Cell;
 use kernel::hil::clock_pm::*;
 use crate::pm;
 use cortexm4;
@@ -12,7 +13,7 @@ const RC80M: u32        = 0x080;
 const DFLL: u32         = 0x100; 
 const PLL: u32          = 0x200; 
 
-pub struct ImixClockManager;
+pub struct ImixClockManager {}
 
 pub static ImixCM: ImixClockManager = ImixClockManager::new();
 
@@ -120,6 +121,13 @@ impl ClockConfigs for ImixClockManager {
         unsafe {
             pm::PM.change_system_clock(system_clock);
             cortexm4::systick::SysTick::set_hertz(pm::get_system_frequency());
+        }
+    }
+
+    fn get_intermediates_list(&self, clock:u32) -> IntermediateList {
+        match clock {
+            RCFAST => IntermediateList::new(0x3c6, 0x38),
+            _ => IntermediateList::new(0, 0),
         }
     }
 }
