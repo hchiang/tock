@@ -534,12 +534,6 @@ impl FLASHCALW {
             FlashState::Read => {
                 self.current_state.set(FlashState::Ready);
 
-                self.client_index.map( |client_index|
-                    self.clock_manager.map( |clock_manager|
-                        clock_manager.disable_clock(client_index)
-                    )
-                );
-
                 self.client.map(|client| {
                     self.buffer.take().map(|buffer| {
                         client.read_complete(buffer, hil::flash::Error::CommandComplete);
@@ -910,13 +904,6 @@ impl FLASHCALW {
         self.current_state.set(FlashState::Read);
         // Hold on to the buffer for the callback.
         self.buffer.replace(buffer);
-
-        self.client_index.map( |client_index|
-            self.clock_manager.map( |clock_manager| {
-                clock_manager.set_min_frequency(client_index, 40000000);
-                clock_manager.enable_clock(client_index);
-            })
-        );
 
         // This is kind of strange, but because read() in this case is
         // synchronous, we still need to schedule as if we had an interrupt so
