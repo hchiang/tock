@@ -1,17 +1,17 @@
-use core::cell::Cell;
 use kernel::hil::clock_pm::*;
 use crate::pm;
 use cortexm4;
 
-const RCSYS: u32        = 0x002; 
-const RC1M: u32         = 0x004; 
-const RCFAST4M: u32     = 0x008; 
-const RCFAST8M: u32     = 0x010;    
-const RCFAST12M: u32    = 0x020; 
-const EXTOSC: u32       = 0x040; 
-const RC80M: u32        = 0x080;
-const DFLL: u32         = 0x100; 
-const PLL: u32          = 0x200; 
+const RCSYS: u32        = 0x001; 
+const RC1M: u32         = 0x002; 
+const RCFAST4M: u32     = 0x004; 
+const RCFAST8M: u32     = 0x008;    
+const RCFAST12M: u32    = 0x010; 
+const EXTOSC: u32       = 0x020; 
+const RC80M: u32        = 0x040;
+const DFLL: u32         = 0x080; 
+const PLL: u32          = 0x100; 
+const ALL_CLOCKS: u32   = 0x1ff; 
 
 pub struct ImixClockManager {}
 
@@ -26,20 +26,20 @@ impl ImixClockManager {
     fn convert_to_clock(&self, clock: u32) -> pm::SystemClockSource {
         // Roughly ordered in terms of least to most power consumption
         return match clock {
-            0x02 => pm::SystemClockSource::RcsysAt115kHz,
-            0x04 => pm::SystemClockSource::RC1M,
-            0x08 => pm::SystemClockSource::RCFAST{
+            RCSYS => pm::SystemClockSource::RcsysAt115kHz,
+            RC1M => pm::SystemClockSource::RC1M,
+            RCFAST4M => pm::SystemClockSource::RCFAST{
                         frequency: pm::RcfastFrequency::Frequency4MHz},
-            0x10 => pm::SystemClockSource::RCFAST{
+            RCFAST8M => pm::SystemClockSource::RCFAST{
                         frequency: pm::RcfastFrequency::Frequency8MHz},
-            0x20 => pm::SystemClockSource::RCFAST{
+            RCFAST12M => pm::SystemClockSource::RCFAST{
                         frequency: pm::RcfastFrequency::Frequency12MHz},
-            0x40 => pm::SystemClockSource::ExternalOscillator{
+            EXTOSC => pm::SystemClockSource::ExternalOscillator{
                         frequency: pm::OscillatorFrequency::Frequency16MHz,
                         startup_mode: pm::OscillatorStartup::FastStart},
-            0x80 => pm::SystemClockSource::RC80M,
-            0x100 => pm::SystemClockSource::DfllRc32kAt48MHz,
-            0x200 => pm::SystemClockSource::PllExternalOscillatorAt48MHz{
+            RC80M => pm::SystemClockSource::RC80M,
+            DFLL => pm::SystemClockSource::DfllRc32kAt48MHz,
+            PLL => pm::SystemClockSource::PllExternalOscillatorAt48MHz{
                         frequency: pm::OscillatorFrequency::Frequency16MHz,
                         startup_mode: pm::OscillatorStartup::FastStart},
             _ => pm::SystemClockSource::RC80M,
@@ -50,23 +50,23 @@ impl ImixClockManager {
 impl ClockConfigs for ImixClockManager {
 
     fn get_num_clock_sources(&self) -> u32 {
-        return 10;
+        9
     }
 
     fn get_max_freq(&self) -> u32 {
-        return 48_000_000;
+        48_000_000
     }
 
     fn get_all_clocks(&self) -> u32 {
-        return 0x3fe;
-    }
-
-    fn get_default(&self) -> u32 {
-        return 0x3ff;
+        ALL_CLOCKS
     }
 
     fn get_compute(&self) -> u32 {
-        return 0x080;
+        RC80M
+    }
+
+    fn get_noncompute(&self) -> u32 {
+        RCSYS 
     }
 
     // Used to calculate acceptable clocks based on frequency range
@@ -125,8 +125,9 @@ impl ClockConfigs for ImixClockManager {
     }
 
     fn get_intermediates_list(&self, clock:u32) -> IntermediateList {
+        let rcfast = RCFAST4M | RCFAST8M | RCFAST12M;
         match clock {
-            RCFAST => IntermediateList::new(0x3c6, 0x38),
+            RCFAST4M | RCFAST8M |RCFAST12M => IntermediateList::new(ALL_CLOCKS & !rcfast, rcfast & !clock),
             _ => IntermediateList::new(0, 0),
         }
     }

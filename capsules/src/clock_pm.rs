@@ -2,6 +2,7 @@ use core::cell::Cell;
 use kernel::common::cells::OptionalCell;
 use kernel::hil::clock_pm::*;
 use kernel::ReturnCode;
+use kernel::debug_gpio;
 
 pub const NUM_CLOCK_CLIENTS: usize = 10; 
 
@@ -141,13 +142,14 @@ pub struct ClockManagement<'a> {
     nolock_clockmask: Cell<u32>,
     // number of apps in compute mode
     compute_counter: Cell<u32>,
+    compute_mode: Cell<bool>,
 }
 
 impl ClockManagement<'a> {
 
     pub fn new(configs: &'a dyn ClockConfigs,
-                clients: [ClockData; NUM_CLOCK_CLIENTS],
-                default: u32) -> ClockManagement<'a> {
+                clients: [ClockData; NUM_CLOCK_CLIENTS])
+                -> ClockManagement<'a> {
         ClockManagement {
             configs: configs,
             clients: clients, 
@@ -156,9 +158,10 @@ impl ClockManagement<'a> {
             current_clock: Cell::new(0),
             change_clock: Cell::new(false),
             lock_count: Cell::new(0),
-            change_clockmask: Cell::new(default),
-            nolock_clockmask: Cell::new(default),
+            change_clockmask: Cell::new(0xffffffff),
+            nolock_clockmask: Cell::new(0xffffffff),
             compute_counter: Cell::new(0),
+            compute_mode: Cell::new(false),
         }
     }
 
@@ -179,12 +182,11 @@ impl ClockManagement<'a> {
             }
         }
 
-        let mut change_clockmask = self.configs.get_default();
+        let mut change_clockmask = self.configs.get_all_clocks();
         let mut set_next_client = false;
         let mut next_client = self.next_client.get();
         for _i in 0..self.num_clients.get() { 
             if self.clients[next_client].get_enabled() {
-            
                 let next_clockmask = clockmask & 
                                     self.clients[next_client].get_clockmask();
                 if next_clockmask == 0 {
@@ -208,19 +210,25 @@ impl ClockManagement<'a> {
             }
         }
         self.change_clockmask.set(change_clockmask);
-        // comparing it to 0x2 is speciality to SAM4L, move into get_compute?
-        //TODO make sure you're passing in a clock and not just the 1 bit for intermediates
-        if self.compute_counter.get() > 0 && clockmask & self.configs.get_compute() != 0 && clockmask & 0x2 != 0 {
-            clockmask = 0x1;
-        }
 
-        // Choose only one clock from clockmask
-        let mut clock = 0x1;
-        for i in 0..self.configs.get_num_clock_sources() {
-            if (clockmask >> i) & 0b1 == 1{
-                clock = 1 << i;
-                break;
-            } 
+        let mut clock = self.configs.get_compute();
+        // if there are no peripherals running OR
+        // if compute mode requested AND the compute clock is compatible AND
+        // a low power inefficient clock is likely to be chosen
+        if clockmask > self.configs.get_all_clocks() ||
+            self.compute_counter.get() > 0 && clockmask & self.configs.get_compute() != 0 &&
+            clockmask & self.configs.get_noncompute() != 0 {
+            self.compute_mode.set(true);
+        }
+        else {
+            self.compute_mode.set(false);
+            // Choose only one clock from clockmask
+            for i in 0..self.configs.get_num_clock_sources() {
+                if (clockmask >> i) & 0b1 == 1{
+                    clock = 1 << i;
+                    break;
+                } 
+            }
         }
 
         let clock_changed = self.current_clock.get() != clock;
@@ -240,9 +248,8 @@ impl ClockManagement<'a> {
 
             //if intermediate clock change needed, do it here
             //future work: if intermediate clock is faster than begin and end clock, additional configure_clock
-            let mut intermediate_clock = 0;
             if intermediates.get_ends() & clock != 0 {
-                intermediate_clock = intermediates.get_intermediates() & self.nolock_clockmask.get();
+                let mut intermediate_clock = intermediates.get_intermediates() & self.nolock_clockmask.get();
                 for i in 0..self.configs.get_num_clock_sources() {
                     if (intermediate_clock >> i) & 0b1 == 1 {
                         intermediate_clock = 1 << i;
@@ -305,14 +312,14 @@ impl ChangeClock for ClockManagement<'a> {
         if compute_mode { 
             self.compute_counter.set(compute_counter+1);
             if self.lock_count.get() == 0 && compute_counter == 0 && 
-                (current_clock == 0x2 || 
-                current_clock != 0x1 && self.nolock_clockmask.get() == self.configs.get_default()) {
+                (current_clock == self.configs.get_noncompute() || !self.compute_mode.get() && 
+                self.nolock_clockmask.get() > self.configs.get_all_clocks()) {
                 self.update_clock();
             }
         } else {
             self.compute_counter.set(compute_counter-1);
             if self.lock_count.get() == 0 && compute_counter == 1 &&
-                current_clock == 0x1 && self.nolock_clockmask.get() != self.configs.get_default() {
+                self.compute_mode.get() && self.nolock_clockmask.get() <= self.configs.get_all_clocks() {
                 self.change_clock.set(true);
             }
         }
@@ -337,6 +344,7 @@ impl ClockManager for ClockManagement<'a> {
         if client_index >= self.num_clients.get() {
             return Err(ReturnCode::EINVAL);
         }
+
         if self.clients[client_index].get_enabled() {
             self.clients[client_index].client_enabled();
             return Ok(self.configs.get_system_frequency());
@@ -346,13 +354,15 @@ impl ClockManager for ClockManagement<'a> {
         let client_clocks = self.clients[client_index].get_clockmask();
         let next_clockmask = self.change_clockmask.get() & client_clocks;
 
-        // The current clock is incompatible
-        // This also captures the case where no peripherals are running
-        //      if the peripheral's last bit is not set 
-        // Or the requesting client can use a lower power clock than current clock
+        // If no peripherals are running 
+        // OR the current clock is incompatible
+        // OR the requesting client can use a lower power clock than current clock
         let current_clock = self.current_clock.get();
-        if client_clocks & current_clock == 0 || 
-            client_clocks % current_clock != 0 {
+        if (self.lock_count.get() == 0 && 
+            (self.nolock_clockmask.get() > self.configs.get_all_clocks())) ||
+            client_clocks & current_clock == 0 {
+            //TODO is this condition necessary?
+            //client_clocks % current_clock != 0 {
             self.change_clock.set(true);
             self.change_clockmask.set(next_clockmask);
         }
@@ -379,7 +389,6 @@ impl ClockManager for ClockManagement<'a> {
              self.change_clockmask.set(next_clockmask);
         }
 
-
         return Ok(self.configs.get_system_frequency());
     }
 
@@ -401,7 +410,7 @@ impl ClockManager for ClockManagement<'a> {
             // When a lock free client calls disable clock, recalculate 
             // nolock_clockmask
             let num_clients = self.num_clients.get();
-            let mut new_clockmask = self.configs.get_default();
+            let mut new_clockmask = 0xffffffff;
             for i in 0..num_clients { 
                 if !self.clients[i].get_need_lock() &&
                         self.clients[i].get_running() {
@@ -410,10 +419,9 @@ impl ClockManager for ClockManagement<'a> {
             }
             self.nolock_clockmask.set(new_clockmask);
         }
-        //TODO this line basically does nothing right now 
-        self.clients[client_index].client_disabled();
+        //self.clients[client_index].client_disabled();
 
-        if self.lock_count.get() == 0 && self.current_clock.get() != 0x1 {
+        if self.lock_count.get() == 0 && !self.compute_mode.get() {
             self.change_clock.set(true);
         }
 

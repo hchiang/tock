@@ -40,8 +40,8 @@ pub trait ClockConfigs {
     fn get_num_clock_sources(&self) -> u32;
     fn get_max_freq(&self) -> u32;
     fn get_all_clocks(&self) -> u32;
-    fn get_default(&self) -> u32;
     fn get_compute(&self) -> u32;
+    fn get_noncompute(&self) -> u32;
     
     fn get_clockmask(&self, min_freq: u32, max_freq: u32) -> u32;
     fn get_clock_frequency(&self, clock: u32) -> u32;

@@ -58,7 +58,6 @@ impl Component for ClockManagerComponent {
             clock_pm::ClockManagement::new(
                 self.chip_configs,
                 clients,
-                self.chip_configs.get_default(),
             )
         );
 
