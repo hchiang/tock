@@ -311,8 +311,9 @@ impl ChangeClock for ClockManagement<'a> {
         let current_clock = self.current_clock.get();
         if compute_mode { 
             self.compute_counter.set(compute_counter+1);
+
             if self.lock_count.get() == 0 && compute_counter == 0 && 
-                (current_clock == self.configs.get_noncompute() || !self.compute_mode.get() && 
+                (current_clock & self.configs.get_noncompute() != 0 || !self.compute_mode.get() && 
                 self.nolock_clockmask.get() > self.configs.get_all_clocks()) {
                 self.update_clock();
             }
