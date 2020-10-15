@@ -31,7 +31,6 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOn
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
-use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 
 /// Struct of the FLASHCALW registers. Section 14.10 of the datasheet.
 #[repr(C)]
@@ -354,11 +353,9 @@ enum FlashState {
     Ready,                        // Flash is ready to complete a command.
     Read,                         // Performing a read operation.
     WriteUnlocking { page: i32 }, // Started a write operation.
-    WriteUnlocking2 { page: i32 }, // Started a write operation.
     WriteErasing { page: i32 },   // Waiting on the page to erase.
     WriteWriting,                 // Waiting on the page to actually be written.
     EraseUnlocking { page: i32 }, // Started an erase operation.
-    EraseUnlocking2 { page: i32 }, // Started an erase operation.
     EraseErasing,                 // Waiting on the erase to finish.
 }
 
@@ -412,9 +409,6 @@ pub struct FLASHCALW {
     client: OptionalCell<&'static dyn hil::flash::Client<FLASHCALW>>,
     current_state: Cell<FlashState>,
     buffer: TakeCell<'static, Sam4lPage>,
-
-    clock_manager: OptionalCell<&'static dyn ClockManager>,
-    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 // static instance for the board. Only one FLASHCALW on chip.
@@ -455,8 +449,6 @@ impl FLASHCALW {
             client: OptionalCell::empty(),
             current_state: Cell::new(FlashState::Unconfigured),
             buffer: TakeCell::empty(),
-            clock_manager: OptionalCell::empty(),
-            client_index: OptionalCell::empty(),
         }
     }
 
@@ -542,17 +534,6 @@ impl FLASHCALW {
             }
             FlashState::WriteUnlocking { page } => {
                 self.current_state
-                    .set(FlashState::WriteUnlocking2 { page: page });
-
-                self.client_index.map( |client_index|
-                    self.clock_manager.map( |clock_manager| {
-                        clock_manager.set_min_frequency(client_index, 1000000);
-                        clock_manager.enable_clock(client_index)
-                    })
-                );
-            }
-            FlashState::WriteUnlocking2 { page } => {
-                self.current_state
                     .set(FlashState::WriteErasing { page: page });
                 self.flashcalw_erase_page(page);
             }
@@ -573,12 +554,6 @@ impl FLASHCALW {
 
                 self.current_state.set(FlashState::Ready);
 
-                self.client_index.map( |client_index|
-                    self.clock_manager.map( |clock_manager|
-                        clock_manager.disable_clock(client_index)
-                    )
-                );
-
                 self.client.map(|client| {
                     self.buffer.take().map(|buffer| {
                         client.write_complete(buffer, hil::flash::Error::CommandComplete);
@@ -586,27 +561,11 @@ impl FLASHCALW {
                 });
             }
             FlashState::EraseUnlocking { page } => {
-                self.current_state.set(FlashState::EraseUnlocking2 { page: page});
-
-                self.client_index.map( |client_index|
-                    self.clock_manager.map( |clock_manager| {
-                        clock_manager.set_min_frequency(client_index, 1000000);
-                        clock_manager.enable_clock(client_index)
-                    })
-                );
-            }
-            FlashState::EraseUnlocking2 { page } => {
                 self.current_state.set(FlashState::EraseErasing);
                 self.flashcalw_erase_page(page);
             }
             FlashState::EraseErasing => {
                 self.current_state.set(FlashState::Ready);
-
-                self.client_index.map( |client_index|
-                    self.clock_manager.map( |clock_manager|
-                        clock_manager.disable_clock(client_index) 
-                    )
-                );
 
                 self.client.map(|client| {
                     client.erase_complete(hil::flash::Error::CommandComplete);
@@ -968,20 +927,3 @@ impl hil::flash::Flash for FLASHCALW {
         self.erase_page(page_number as i32)
     }
 }
-
-impl ClockClient for FLASHCALW {
-    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
-        self.clock_manager.set(clock_manager);
-        self.client_index.set(client_index);
-        clock_manager.set_need_lock(client_index, false);
-    }
-    fn configure_clock(&self, _frequency: u32) {}
-    fn clock_enabled(&self) {
-        match self.current_state.get() {
-            FlashState::WriteUnlocking2{..} | FlashState::EraseUnlocking2{..} => self.handle_interrupt(),
-            _ => {}
-        }
-    }
-    fn clock_disabled(&self) {}
-}
-

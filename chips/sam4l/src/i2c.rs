@@ -18,7 +18,6 @@ use kernel::common::registers::{register_bitfields, FieldValue, ReadOnly, ReadWr
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ClockInterface;
-use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 
 // Listing of all registers related to the TWIM peripheral.
 // Section 27.9 of the datasheet
@@ -561,13 +560,6 @@ pub struct I2CHw {
     slave_write_buffer: TakeCell<'static, [u8]>,
     slave_write_buffer_len: Cell<u8>,
     slave_write_buffer_index: Cell<u8>,
-
-    callback_addr: Cell<u8>,
-    callback_data: TakeCell<'static, [u8]>,
-    callback_write_len: Cell<u8>,
-    callback_read_len: Cell<u8>,
-    clock_manager: OptionalCell<&'static dyn ClockManager>,
-    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 impl PeripheralManagement<TWIMClock> for I2CHw {
@@ -697,26 +689,14 @@ impl I2CHw {
             slave_write_buffer: TakeCell::empty(),
             slave_write_buffer_len: Cell::new(0),
             slave_write_buffer_index: Cell::new(0),
-
-            callback_addr: Cell::new(0),
-            callback_data: TakeCell::empty(),
-            callback_write_len: Cell::new(0),
-            callback_read_len: Cell::new(0),
-            clock_manager: OptionalCell::empty(),
-            client_index: OptionalCell::empty(),
         }
     }
 
     /// Set the clock prescaler and the time widths of the I2C signals
     /// in the CWGR register to make the bus run at a particular I2C speed.
-    fn set_bus_speed(&self, twim: &TWIMRegisterManager, frequency: u32) {
+    fn set_bus_speed(&self, twim: &TWIMRegisterManager) {
         // Set I2C waveform timing parameters based on ASF code
-        let system_frequency; 
-        if frequency == 0 {
-            system_frequency = pm::get_system_frequency();
-        } else {
-            system_frequency = frequency;
-        }
+        let system_frequency = pm::get_system_frequency();
         let mut exp = 0;
         let mut f_prescaled = system_frequency / 400000 / 2;
         while (f_prescaled > 0xff) && (exp <= 0x7) {
@@ -796,12 +776,6 @@ impl I2CHw {
         match on_deck {
             None => {
                 {
-                    self.client_index.map( |client_index|
-                        self.clock_manager.map( |clock_manager|
-                            clock_manager.disable_clock(client_index)
-                        )
-                    );
-
                     let twim = &TWIMRegisterManager::new(&self);
 
                     twim.registers.cmdr.set(0);
@@ -1321,19 +1295,6 @@ impl I2CHw {
             twis.registers.cr.write(control + ControlSlave::SEN::Enable);
         }
     }
-    
-    fn cm_setup(&self, addr: u8, data: &'static mut [u8], write_len: u8, read_len: u8) {
-        self.callback_addr.set(addr);
-        self.callback_data.replace(data);
-        self.callback_write_len.set(write_len);
-        self.callback_read_len.set(read_len);
-
-        self.client_index.map( |client_index|
-            self.clock_manager.map( |clock_manager|
-                clock_manager.enable_clock(client_index)
-            )
-        );
-    }
 }
 
 impl DMAClient for I2CHw {
@@ -1354,7 +1315,7 @@ impl hil::i2c::I2CMaster for I2CHw {
         twim.registers.cr.write(Control::MDIS::SET);
 
         // Init the bus speed
-        self.set_bus_speed(twim, 0);
+        self.set_bus_speed(twim);
 
         // slew
         twim.registers.srr.write(
@@ -1372,23 +1333,30 @@ impl hil::i2c::I2CMaster for I2CHw {
         let twim = &TWIMRegisterManager::new(&self);
         twim.registers.cr.write(Control::MDIS::SET);
         self.disable_interrupts(twim);
-        self.client_index.map( |client_index|
-            self.clock_manager.map( |clock_manager|
-                clock_manager.disable_clock(client_index)
-            )
-        );
     }
 
     fn write(&self, addr: u8, data: &'static mut [u8], len: u8) {
-        self.cm_setup(addr, data, len, 0);
+        I2CHw::write(
+            self,
+            addr,
+            Command::START::StartCondition + Command::STOP::SendStop,
+            data,
+            len,
+        );
     }
 
     fn read(&self, addr: u8, data: &'static mut [u8], len: u8) {
-        self.cm_setup(addr, data, 0, len);
+        I2CHw::read(
+            self,
+            addr,
+            Command::START::StartCondition + Command::STOP::SendStop,
+            data,
+            len,
+        );
     }
 
     fn write_read(&self, addr: u8, data: &'static mut [u8], write_len: u8, read_len: u8) {
-        self.cm_setup(addr, data, write_len, read_len);
+        I2CHw::write_read(self, addr, data, write_len, read_len)
     }
 }
 
@@ -1457,43 +1425,3 @@ impl hil::i2c::I2CSlave for I2CHw {
 }
 
 impl hil::i2c::I2CMasterSlave for I2CHw {}
-
-impl ClockClient for I2CHw {
-    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
-        self.clock_manager.set(clock_manager);
-        self.client_index.set(client_index);
-        clock_manager.set_min_frequency(client_index, 4*400000); 
-        clock_manager.set_need_lock(client_index, false);
-    }
-    fn configure_clock(&self, frequency: u32) {
-        let twim = &TWIMRegisterManager::new(&self);
-        self.set_bus_speed(twim, frequency);
-    }
-    fn clock_enabled(&self) {
-        let addr = self.callback_addr.get();
-        let data = self.callback_data.take().unwrap();
-        let write_len = self.callback_write_len.get();
-        let read_len = self.callback_read_len.get();
-
-        if read_len == 0 {
-            I2CHw::write(
-                self,
-                addr,
-                Command::START::StartCondition + Command::STOP::SendStop,
-                data,
-                write_len,
-            );
-        } else if write_len == 0 {
-            I2CHw::read(
-                self,
-                addr,
-                Command::START::StartCondition + Command::STOP::SendStop,
-                data,
-                read_len,
-            );
-        } else {
-            I2CHw::write_read(self, addr, data, write_len, read_len);
-        }
-    }
-    fn clock_disabled(&self) {}
-}

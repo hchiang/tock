@@ -19,7 +19,6 @@ use capsules::virtual_uart::MuxUart;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::hil;
-use kernel::hil::clock_pm::{ChangeClock, ClockManager};
 use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
@@ -40,7 +39,6 @@ use components::spi::{SpiComponent, SpiSyscallComponent};
 use imix_components::adc::AdcComponent;
 use imix_components::analog_comparator::AcComponent;
 use imix_components::button::ButtonComponent;
-use imix_components::clock_pm::ClockManagerComponent;
 use imix_components::fxos8700::NineDofComponent;
 use imix_components::gpio::GpioComponent;
 use imix_components::led::LedComponent;
@@ -427,15 +425,6 @@ pub unsafe fn reset_handler() {
     )
     .finalize(());
 
-    let clock_manager = ClockManagerComponent::new(&sam4l::clock_pm::ImixCM).finalize(());
-    clock_manager.register(&sam4l::usart::USART3);
-    clock_manager.register(&sam4l::adc::ADC0);
-    clock_manager.register(&sam4l::i2c::I2C2);
-    clock_manager.register(&sam4l::spi::SPI);
-    clock_manager.register(&sam4l::gpio::PA[08]); //spi's gpio
-    clock_manager.register(&sam4l::gpio::PC[31]); //D2
-    clock_manager.register(&sam4l::flashcalw::FLASH_CONTROLLER);
-
     let imix = Imix {
         //pconsole,
         console,
@@ -470,7 +459,6 @@ pub unsafe fn reset_handler() {
     // initialization to work.
     rf233.reset();
     rf233.start();
-    clock_manager.change_clock();
 
     //imix.pconsole.start();
 
@@ -516,7 +504,7 @@ pub unsafe fn reset_handler() {
         &process_mgmt_cap,
     );
 
-    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap, clock_manager);
+    board_kernel.kernel_loop(&imix, chip, Some(&imix.ipc), &main_cap);
 }
 
 //struct Dummy;

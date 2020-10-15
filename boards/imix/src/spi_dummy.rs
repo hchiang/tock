@@ -67,7 +67,7 @@ pub unsafe fn spi_dummy_test() {
     sam4l::spi::SPI.set_active_peripheral(sam4l::spi::Peripheral::Peripheral0);
     sam4l::spi::SPI.set_client(&SPICB);
     sam4l::spi::SPI.init();
-    sam4l::spi::SPI.set_baud_rate(200000, 0);
+    sam4l::spi::SPI.set_baud_rate(200000);
 
     let len = BUF2.len();
     if sam4l::spi::SPI.read_write_bytes(&mut BUF2, Some(&mut BUF1), len) != ReturnCode::SUCCESS {

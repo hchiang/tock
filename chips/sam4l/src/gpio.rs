@@ -7,7 +7,6 @@ use kernel::common::registers::{ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::hil::gpio;
-use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 
 #[repr(C)]
 struct Register {
@@ -292,8 +291,6 @@ pub struct GPIOPin {
     port: StaticRef<GpioRegisters>,
     pin_mask: u32,
     client: OptionalCell<&'static dyn hil::gpio::Client>,
-    clock_manager: OptionalCell<&'static dyn ClockManager>,
-    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 impl GPIOPin {
@@ -306,8 +303,6 @@ impl GPIOPin {
             },
             pin_mask: 1 << ((pin as u32) % 32),
             client: OptionalCell::empty(),
-            clock_manager: OptionalCell::empty(),
-            client_index: OptionalCell::empty(),
         }
     }
 
@@ -419,11 +414,6 @@ impl GPIOPin {
             INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
             port.ier.set.set(self.pin_mask);
         }
-        self.client_index.map( |client_index|
-            self.clock_manager.map( |clock_manager|
-                clock_manager.enable_clock(client_index)
-            )
-        );
     }
 
     pub fn disable_interrupt(&self) {
@@ -432,11 +422,6 @@ impl GPIOPin {
             INTERRUPT_COUNT.fetch_sub(1, Ordering::Relaxed);
             port.ier.clear.set(self.pin_mask);
         }
-        self.client_index.map( |client_index|
-            self.clock_manager.map( |clock_manager|
-                clock_manager.disable_clock(client_index)
-            )
-        );
     }
 
     pub fn handle_interrupt(&self) {
@@ -618,15 +603,4 @@ impl gpio::Interrupt for GPIOPin {
     fn is_pending(&self) -> bool {
         GPIOPin::is_pending(self)
     }
-}
-
-impl ClockClient for GPIOPin {
-    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
-        self.clock_manager.set(clock_manager);
-        self.client_index.set(client_index);
-        clock_manager.set_need_lock(client_index, false);
-    }
-    fn configure_clock(&self, _frequency: u32) {}
-    fn clock_enabled(&self) {}
-    fn clock_disabled(&self) {}
 }

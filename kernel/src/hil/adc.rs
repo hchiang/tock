@@ -45,7 +45,6 @@ pub trait Client {
     fn sample_ready(&self, sample: u16);
 }
 
-
 // *** Interfaces for high-speed, buffered ADC sampling ***
 
 /// Interface for continuously sampling at a given frequency on a channel.

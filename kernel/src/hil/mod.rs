@@ -22,7 +22,6 @@ pub mod symmetric_encryption;
 pub mod time;
 pub mod uart;
 pub mod usb;
-pub mod clock_pm;
 pub mod watchdog;
 
 /// Shared interface for configuring components.

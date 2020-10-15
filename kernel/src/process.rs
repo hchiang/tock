@@ -76,12 +76,6 @@ pub trait ProcessType {
     /// Returns the process's identifier
     fn appid(&self) -> AppId;
 
-    /// Returns the process's compute_mode 
-    fn get_compute_mode(&self) -> bool;
-
-    /// Set the process's compute_mode
-    fn set_compute_mode(&self, compute_mode: bool);
-
     /// Queue a `Task` for the process. This will be added to a per-process
     /// buffer and executed by the scheduler. `Task`s are some function the app
     /// should run, for example a callback or an IPC call.
@@ -407,9 +401,6 @@ pub struct Process<'a, C: 'static + Chip> {
     /// Corresponds to AppId
     app_idx: usize,
 
-    /// If the app is currently computing
-    compute_mode: Cell<bool>,
-
     /// Pointer to the main Kernel struct.
     kernel: &'static Kernel,
 
@@ -503,14 +494,6 @@ pub struct Process<'a, C: 'static + Chip> {
 impl<C: Chip> ProcessType for Process<'a, C> {
     fn appid(&self) -> AppId {
         AppId::new(self.kernel, self.app_idx)
-    }
-
-    fn get_compute_mode(&self) -> bool {
-        self.compute_mode.get()
-    }
-
-    fn set_compute_mode(&self, compute_mode: bool) {
-        self.compute_mode.set(compute_mode);
     }
 
     fn enqueue_task(&self, task: Task) -> bool {
@@ -1301,7 +1284,6 @@ impl<C: 'static + Chip> Process<'a, C> {
                 &mut *(process_struct_memory_location as *mut Process<'static, C>);
 
             process.app_idx = index;
-            process.compute_mode = Cell::new(false);
             process.kernel = kernel;
             process.chip = chip;
             process.memory = app_memory;
