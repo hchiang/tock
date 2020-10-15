@@ -120,6 +120,7 @@ struct Imix {
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static>,
     alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
+    clock_driver: &'static capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
     //temp: &'static capsules::temperature::TemperatureSensor<'static>,
     //humidity: &'static capsules::humidity::HumiditySensor<'static>,
     //ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
@@ -184,6 +185,7 @@ impl kernel::Platform for Imix {
             capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
+            28 => f(Some(self.clock_driver)),
             _ => f(None),
         }
     }
@@ -269,6 +271,9 @@ unsafe fn set_pin_primary_functions() {
 #[no_mangle]
 pub unsafe fn reset_handler() {
     sam4l::init();
+
+    let clock_driver = static_init!(capsules::clock_pm::ClockCM<sam4l::clock_pm::ImixClockManager>,
+                                    capsules::clock_pm::ClockCM::new(sam4l::clock_pm::ImixClockManager::new()));
 
     set_pin_primary_functions();
 
@@ -429,6 +434,7 @@ pub unsafe fn reset_handler() {
         //pconsole,
         console,
         alarm,
+        clock_driver,
         gpio,
         //temp,
         //humidity,

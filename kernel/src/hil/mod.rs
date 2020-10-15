@@ -3,6 +3,7 @@
 pub mod adc;
 pub mod analog_comparator;
 pub mod ble_advertising;
+pub mod clock_pm;
 pub mod crc;
 pub mod dac;
 pub mod eic;

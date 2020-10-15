@@ -17,6 +17,7 @@ pub mod ast;
 pub mod bpm;
 pub mod bscif;
 pub mod chip;
+pub mod clock_pm;
 pub mod crccu;
 pub mod dac;
 pub mod dma;
