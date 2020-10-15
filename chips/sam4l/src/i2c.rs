@@ -1304,6 +1304,15 @@ impl DMAClient for I2CHw {
 impl hil::i2c::I2CMaster for I2CHw {
     /// This enables the entire I2C peripheral
     fn enable(&self) {
+
+        unsafe { 
+            if pm::get_system_frequency() < 4000000 {
+                pm::PM.change_system_clock(pm::SystemClockSource::RCFAST{
+                    frequency: pm::RcfastFrequency::Frequency4MHz,
+                });
+            }
+        }
+
         //disable the i2c slave peripheral
         hil::i2c::I2CSlave::disable(self);
 

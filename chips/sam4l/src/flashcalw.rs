@@ -559,6 +559,10 @@ impl FLASHCALW {
                         client.write_complete(buffer, hil::flash::Error::CommandComplete);
                     });
                 });
+
+                unsafe {
+                    pm::PM.change_system_clock(pm::SystemClockSource::RcsysAt115kHz);
+                }
             }
             FlashState::EraseUnlocking { page } => {
                 self.current_state.set(FlashState::EraseErasing);
@@ -885,6 +889,10 @@ impl FLASHCALW {
 
         // Save the buffer for the future write.
         self.buffer.replace(data);
+
+        unsafe {
+            pm::PM.change_system_clock(pm::SystemClockSource::RC1M);
+        }
 
         self.current_state
             .set(FlashState::WriteUnlocking { page: page_num });
