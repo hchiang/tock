@@ -793,6 +793,7 @@ impl hil::adc::Adc for Adc {
             // cannot cancel sampling that isn't running
             ReturnCode::EINVAL
         } else {
+
             // clean up state
             self.active.set(false);
             self.continuous.set(false);
@@ -809,6 +810,10 @@ impl hil::adc::Adc for Adc {
 
             // disable the ADC
             self.disable();
+
+            unsafe {
+                pm::PM.change_system_clock(pm::SystemClockSource::RC80M);
+            }
 
             // stop DMA transfer if going. This should safely return a None if
             // the DMA was not being used
@@ -876,6 +881,11 @@ impl hil::adc::AdcHighSpeed for Adc {
         Option<&'static mut [u16]>,
     ) {
         let regs: &AdcRegisters = &*self.registers;
+
+        unsafe {
+            pm::PM.change_system_clock(pm::SystemClockSource::RCFAST{
+                frequency: pm::RcfastFrequency::Frequency4MHz});
+        }
 
         let res = self.config_and_enable(frequency);
 

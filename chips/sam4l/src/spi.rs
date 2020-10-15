@@ -6,6 +6,8 @@
 //!
 //! - Authors: Sam Crow <samcrow@uw.edu>, Philip Levis <pal@cs.stanford.edu>
 
+use crate::gpio;
+use core::sync::atomic::Ordering;
 use crate::dma::DMAChannel;
 use crate::dma::DMAClient;
 use crate::dma::DMAPeripheral;
@@ -285,6 +287,17 @@ impl SpiHw {
         if self.role.get() == SpiRole::SpiSlave {
             spi.registers.idr.write(InterruptFlags::NSSR::SET); // Disable NSSR
         }
+       
+        unsafe {
+            let gpio = gpio::INTERRUPT_COUNT.load(Ordering::Relaxed) != 0;
+            if gpio {
+                // For this app, we are waiting on interrupt from radio
+                pm::PM.change_system_clock(pm::SystemClockSource::RC1M);
+            } else {
+                pm::PM.change_system_clock(pm::SystemClockSource::RC80M);
+            }
+        } 
+
     }
 
     /// Sets the approximate baud rate for the active peripheral,
@@ -300,7 +313,8 @@ impl SpiHw {
     pub fn set_baud_rate(&self, rate: u32) -> u32 {
         // Main clock frequency
         let mut real_rate = rate;
-        let clock = pm::get_system_frequency();
+        //let clock = pm::get_system_frequency();
+        let clock = 4000000;
 
         if real_rate < 188235 {
             real_rate = 188235;
@@ -574,6 +588,11 @@ impl spi::SpiMaster for SpiHw {
         if self.is_busy() {
             return ReturnCode::EBUSY;
         }
+        unsafe {
+            pm::PM.change_system_clock(pm::SystemClockSource::RCFAST {
+                frequency: pm::RcfastFrequency::Frequency4MHz,
+            });
+        }
 
         self.read_write_bytes(Some(write_buffer), read_buffer, len)
     }
@@ -692,6 +711,7 @@ impl DMAClient for SpiHw {
             .set(self.transfers_in_progress.get() - 1);
 
         if self.transfers_in_progress.get() == 0 {
+
             let txbuf = self.dma_write.map_or(None, |dma| {
                 let buf = dma.abort_transfer();
                 dma.disable();
