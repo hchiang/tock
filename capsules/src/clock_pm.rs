@@ -246,18 +246,6 @@ impl ClockManagement<'a> {
                 } 
             }
 
-            //if intermediate clock change needed, do it here
-            //future work: if intermediate clock is faster than begin and end clock, additional configure_clock
-            if intermediates.get_ends() & clock != 0 {
-                let mut intermediate_clock = intermediates.get_intermediates() & self.nolock_clockmask.get();
-                for i in 0..self.configs.get_num_clock_sources() {
-                    if (intermediate_clock >> i) & 0b1 == 1 {
-                        intermediate_clock = 1 << i;
-                        break;
-                    } 
-                }
-                self.configs.change_system_clock(intermediate_clock);
-            }
             self.configs.change_system_clock(clock);
             if current_freq > system_freq {
                 for i in 0..self.num_clients.get() { 
