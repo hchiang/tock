@@ -117,32 +117,32 @@ struct Imix {
     //    'static,
     //    components::process_console::Capability,
     //>,
-    console: &'static capsules::console::Console<'static>,
-    gpio: &'static capsules::gpio::GPIO<'static>,
-    alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
-    //temp: &'static capsules::temperature::TemperatureSensor<'static>,
-    //humidity: &'static capsules::humidity::HumiditySensor<'static>,
-    //ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
-    adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc>,
-    led: &'static capsules::led::LED<'static>,
-    button: &'static capsules::button::Button<'static>,
-    rng: &'static capsules::rng::RngDriver<'static>,
-    //analog_comparator: &'static capsules::analog_comparator::AnalogComparator<
-    //    'static,
-    //    sam4l::acifc::Acifc<'static>,
-    //>,
-    spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
+    //console: &'static capsules::console::Console<'static>,
+    //gpio: &'static capsules::gpio::GPIO<'static>,
+    //alarm: &'static AlarmDriver<'static, VirtualMuxAlarm<'static, sam4l::ast::Ast<'static>>>,
+    ////temp: &'static capsules::temperature::TemperatureSensor<'static>,
+    ////humidity: &'static capsules::humidity::HumiditySensor<'static>,
+    ////ambient_light: &'static capsules::ambient_light::AmbientLight<'static>,
+    //adc: &'static capsules::adc::Adc<'static, sam4l::adc::Adc>,
+    //led: &'static capsules::led::LED<'static>,
+    //button: &'static capsules::button::Button<'static>,
+    //rng: &'static capsules::rng::RngDriver<'static>,
+    ////analog_comparator: &'static capsules::analog_comparator::AnalogComparator<
+    ////    'static,
+    ////    sam4l::acifc::Acifc<'static>,
+    ////>,
+    //spi: &'static capsules::spi::Spi<'static, VirtualSpiMasterDevice<'static, sam4l::spi::SpiHw>>,
     ipc: kernel::ipc::IPC,
-    ninedof: &'static capsules::ninedof::NineDof<'static>,
-    radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
-    udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
-    //crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
-    //usb_driver: &'static capsules::usb::usb_user::UsbSyscallDriver<
-    //    'static,
-    //    capsules::usb::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>,
-    //>,
-    //nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
-    nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
+    //ninedof: &'static capsules::ninedof::NineDof<'static>,
+    //radio_driver: &'static capsules::ieee802154::RadioDriver<'static>,
+    //udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
+    ////crc: &'static capsules::crc::Crc<'static, sam4l::crccu::Crccu<'static>>,
+    ////usb_driver: &'static capsules::usb::usb_user::UsbSyscallDriver<
+    ////    'static,
+    ////    capsules::usb::usbc_client::Client<'static, sam4l::usbc::Usbc<'static>>,
+    ////>,
+    ////nrf51822: &'static capsules::nrf51822_serialization::Nrf51822Serialization<'static>,
+    //nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
 }
 
 // The RF233 radio stack requires our buffers for its SPI operations:
@@ -164,25 +164,25 @@ impl kernel::Platform for Imix {
         F: FnOnce(Option<&dyn kernel::Driver>) -> R,
     {
         match driver_num {
-            capsules::console::DRIVER_NUM => f(Some(self.console)),
-            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
-            capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
-            capsules::spi::DRIVER_NUM => f(Some(self.spi)),
-            capsules::adc::DRIVER_NUM => f(Some(self.adc)),
-            capsules::led::DRIVER_NUM => f(Some(self.led)),
-            capsules::button::DRIVER_NUM => f(Some(self.button)),
-            //capsules::analog_comparator::DRIVER_NUM => f(Some(self.analog_comparator)),
-            //capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
-            //capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
-            //capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
-            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
-            //capsules::crc::DRIVER_NUM => f(Some(self.crc)),
-            //capsules::usb::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
-            capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
-            capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
-            //capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
-            capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
-            capsules::rng::DRIVER_NUM => f(Some(self.rng)),
+            //capsules::console::DRIVER_NUM => f(Some(self.console)),
+            //capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
+            //capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            //capsules::spi::DRIVER_NUM => f(Some(self.spi)),
+            //capsules::adc::DRIVER_NUM => f(Some(self.adc)),
+            //capsules::led::DRIVER_NUM => f(Some(self.led)),
+            //capsules::button::DRIVER_NUM => f(Some(self.button)),
+            ////capsules::analog_comparator::DRIVER_NUM => f(Some(self.analog_comparator)),
+            ////capsules::ambient_light::DRIVER_NUM => f(Some(self.ambient_light)),
+            ////capsules::temperature::DRIVER_NUM => f(Some(self.temp)),
+            ////capsules::humidity::DRIVER_NUM => f(Some(self.humidity)),
+            //capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
+            ////capsules::crc::DRIVER_NUM => f(Some(self.crc)),
+            ////capsules::usb::usb_user::DRIVER_NUM => f(Some(self.usb_driver)),
+            //capsules::ieee802154::DRIVER_NUM => f(Some(self.radio_driver)),
+            //capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
+            ////capsules::nrf51822_serialization::DRIVER_NUM => f(Some(self.nrf51822)),
+            //capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
+            //capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
         }
@@ -282,10 +282,21 @@ pub unsafe fn reset_handler() {
     debug_gpio!(2, make_output);
     debug_gpio!(2, clear);
 
-    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
-        frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
-        startup_mode: sam4l::pm::OscillatorStartup::FastStart,
-    });
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::RcsysAt115kHz);
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::RC1M);
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::RCFAST {
+    //    frequency: sam4l::pm::RcfastFrequency::Frequency12MHz,
+    //});
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::ExternalOscillator {
+    //    frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
+    //    startup_mode: sam4l::pm::OscillatorStartup::FastStart,
+    //});
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::RC80M);
+    sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32kAt48MHz);
+    //sam4l::pm::PM.setup_system_clock(sam4l::pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+    //    frequency: sam4l::pm::OscillatorFrequency::Frequency16MHz,
+    //    startup_mode: sam4l::pm::OscillatorStartup::FastStart,
+    //});
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
@@ -297,14 +308,14 @@ pub unsafe fn reset_handler() {
     let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
 
     power::configure_submodules(power::SubmoduleConfig {
-        rf233: true,
+        rf233: false,
         nrf51422: false,
         sensors: false,
-        trng: true,
+        trng: false,
     });
 
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
-
+/*
     // # CONSOLE
     // Create a shared UART channel for the consoles and for kernel debug.
     sam4l::usart::USART3.set_mode(sam4l::usart::UsartMode::Uart);
@@ -424,29 +435,30 @@ pub unsafe fn reset_handler() {
         mux_alarm,
     )
     .finalize(());
+    */
 
     let imix = Imix {
         //pconsole,
-        console,
-        alarm,
-        gpio,
-        //temp,
-        //humidity,
-        //ambient_light,
-        adc,
-        led,
-        button,
-        rng,
-        //analog_comparator,
-        //crc,
-        spi: spi_syscalls,
+        //console,
+        //alarm,
+        //gpio,
+        ////temp,
+        ////humidity,
+        ////ambient_light,
+        //adc,
+        //led,
+        //button,
+        //rng,
+        ////analog_comparator,
+        ////crc,
+        //spi: spi_syscalls,
         ipc: kernel::ipc::IPC::new(board_kernel, &grant_cap),
-        ninedof,
-        radio_driver,
-        udp_driver,
-        //usb_driver,
-        //nrf51822: nrf_serialization,
-        nonvolatile_storage: nonvolatile_storage,
+        //ninedof,
+        //radio_driver,
+        //udp_driver,
+        ////usb_driver,
+        ////nrf51822: nrf_serialization,
+        //nonvolatile_storage: nonvolatile_storage,
     };
 
     let chip = static_init!(sam4l::chip::Sam4l, sam4l::chip::Sam4l::new());
@@ -457,8 +469,8 @@ pub unsafe fn reset_handler() {
 
     // These two lines need to be below the creation of the chip for
     // initialization to work.
-    rf233.reset();
-    rf233.start();
+    //rf233.reset();
+    //rf233.start();
 
     //imix.pconsole.start();
 
@@ -488,7 +500,7 @@ pub unsafe fn reset_handler() {
     });
     debug!("nop bench: {}", cycles);
 */
-    debug!("Initialization complete. Entering main loop");
+    //debug!("Initialization complete. Entering main loop");
 
     extern "C" {
         /// Beginning of the ROM region containing app images.

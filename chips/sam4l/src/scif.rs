@@ -182,6 +182,7 @@ register_bitfields![u32,
             GCLK9 = 1
         ],
         PLLOPT OFFSET(3) NUMBITS(3) [
+            HighRange = 1,
             DivideBy2 = 2
             // Other option combinations omitted here, as it
             // is not clear in which order the bits are stored
@@ -264,7 +265,7 @@ pub fn setup_dfll_rc32k_48mhz() {
         // Read the current DFLL settings
         let scif_dfll0conf = SCIF.dfll0conf.get();
         // Compute some new configuration field values
-        let new_config_fields = Dfll::EN::SET + Dfll::MODE::ClosedLoop + Dfll::RANGE.val(2);
+        let new_config_fields = Dfll::EN::SET + Dfll::MODE::ClosedLoop + Dfll::RANGE.val(3);
         // Apply the new field values to the current config value,
         // for use further below ...
         let scif_dfll0conf_new = new_config_fields.modify(scif_dfll0conf);
@@ -293,7 +294,7 @@ pub fn setup_dfll_rc32k_48mhz() {
         // Set multiply value
         unlock(Register::DFLL0MUL);
         // 1464 = 48000000 / 32768
-        SCIF.dfll0mul.set(1464);
+        SCIF.dfll0mul.set(610);
         wait_dfll0_ready();
 
         // Set SSG value
@@ -374,9 +375,9 @@ pub unsafe fn setup_pll_osc_48mhz() {
     unlock(Register::PLL0);
     SCIF.pll0.write(
         PllControl::PLLCOUNT::Max
-            + PllControl::PLLMUL.val(5)
+            + PllControl::PLLMUL.val(14)
             + PllControl::PLLDIV.val(1)
-            + PllControl::PLLOPT::DivideBy2
+            + PllControl::PLLOPT::HighRange
             + PllControl::PLLOSC::OSC0
             + PllControl::PLLEN::SET,
     );

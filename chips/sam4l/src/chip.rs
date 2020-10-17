@@ -14,6 +14,8 @@ use crate::gpio;
 use crate::i2c;
 use crate::nvic;
 use crate::pm;
+use crate::bpm;
+use crate::bscif;
 use crate::spi;
 use crate::trng;
 use crate::usart;
@@ -183,17 +185,13 @@ impl Chip for Sam4l {
     }
 
     fn sleep(&self) {
-        if pm::deep_sleep_ready() {
-            unsafe {
-                cortexm4::scb::set_sleepdeep();
-            }
-        } else {
-            unsafe {
-                cortexm4::scb::unset_sleepdeep();
-            }
-        }
+        //loop {
+        //    cortexm4::support::nop();
+        //}
 
         unsafe {
+            bpm::set_sleep_mode(2);
+            cortexm4::scb::unset_sleepdeep();
             cortexm4::support::wfi();
         }
     }

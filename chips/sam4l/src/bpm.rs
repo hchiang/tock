@@ -200,3 +200,17 @@ pub unsafe fn set_power_scaling(ps_value: PowerScaling) {
             + PowerModeControl::PSCREQ::PowerScalingRequested,
     );
 }
+
+pub unsafe fn set_sleep_mode(mode: u32) {
+
+    let control = BPM.pmcon.extract();
+
+    unlock_register(0x1c); // Control
+
+    BPM.pmcon.modify_no_read(
+        control,
+        PowerModeControl::SLEEP.val(mode)
+        + PowerModeControl::BKUP::NoPowerSave
+        + PowerModeControl::RET::NoPowerSave
+    );
+}

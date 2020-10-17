@@ -257,8 +257,8 @@ register_bitfields![u32,
         ],
         /// Voltage Regulator disable
         DIS OFFSET(0) NUMBITS(1) [
-            VoltageRegulatorDisable = 0,
-            VoltageRegulatorEnable = 1
+            VoltageRegulatorEnable = 0,
+            VoltageRegulatorDisable = 1
         ]
     ],
 
@@ -393,4 +393,16 @@ pub unsafe fn disable_rc_1mhz() {
 
     // Wait for the RC1M to be disabled
     while BSCIF.rc1mcr.is_set(RC1MClockConfig::CLKOEN) {}
+}
+
+pub fn disable_regulator() {
+    let vregcr = BSCIF.vregcr.extract();
+    
+    BSCIF
+        .unlock
+        .write(Unlock::KEY.val(0xAA) + Unlock::ADDR.val(0x44));
+
+    BSCIF
+        .vregcr
+        .modify_no_read(vregcr, VoltageRegulatorConfig::DIS::VoltageRegulatorDisable);
 }
