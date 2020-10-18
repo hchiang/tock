@@ -185,9 +185,9 @@ impl Chip for Sam4l {
     }
 
     fn sleep(&self) {
-        //loop {
-        //    cortexm4::support::nop();
-        //}
+        loop {
+            cortexm4::support::nop();
+        }
 
         unsafe {
             bpm::set_sleep_mode(2);

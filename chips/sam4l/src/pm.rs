@@ -74,6 +74,10 @@ register_bitfields![u32,
         /// CPU Division: Set to 1 to divide main clock by 2^(CPUSEL+1).
         CPUDIV OFFSET(7) NUMBITS(1) [],
 
+        //DIV2 0
+        //DIV4 1
+        //DIV8 2
+        //DIV16 3
         /// Exponent for CPU clock divider. Must be 0 if CPUDIV is 0.
         CPUSEL OFFSET(0) NUMBITS(3) []
     ],
@@ -610,6 +614,16 @@ impl PowerManager {
                 // Configure and turn on DFLL at 48MHz
                 configure_48mhz_dfll();
                 // Set Flash wait state to 1 for > 24MHz in PS2
+
+                //TODO for DFLL = 150
+                let cpusel = (*PM_REGS).cpusel.extract();
+                unlock(0x00000004);
+                (*PM_REGS).cpusel.modify_no_read(
+                    cpusel,
+                    CpuClockSelect::CPUDIV::SET + CpuClockSelect::CPUSEL.val(1),
+                );
+                while (*PM_REGS).sr.matches_all(InterruptOrStatus::CKRDY::CLEAR) {}
+
                 flashcalw::FLASH_CONTROLLER.set_wait_state(1);
                 // Change the system clock to DFLL
                 select_main_clock(MainClock::DFLL);
@@ -633,6 +647,16 @@ impl PowerManager {
             } => {
                 // Configure and turn on PLL at 48MHz
                 configure_external_oscillator_pll(frequency, startup_mode);
+
+                //TODO for Pll = 240
+                //let cpusel = (*PM_REGS).cpusel.extract();
+                //unlock(0x00000004);
+                //(*PM_REGS).cpusel.modify_no_read(
+                //    cpusel,
+                //    CpuClockSelect::CPUDIV::SET + CpuClockSelect::CPUSEL.val(2),
+                //);
+                //while (*PM_REGS).sr.matches_all(InterruptOrStatus::CKRDY::CLEAR) {}
+
                 // Set Flash wait state to 1 for > 24MHz in PS2
                 flashcalw::FLASH_CONTROLLER.set_wait_state(1);
                 // Change the system clock to PLL
@@ -649,7 +673,7 @@ impl PowerManager {
                 unlock(0x00000004);
                 (*PM_REGS).cpusel.modify_no_read(
                     cpusel,
-                    CpuClockSelect::CPUDIV::SET + CpuClockSelect::CPUSEL::CLEAR,
+                    CpuClockSelect::CPUDIV::SET + CpuClockSelect::CPUSEL.val(0)
                 );
                 while (*PM_REGS).sr.matches_all(InterruptOrStatus::CKRDY::CLEAR) {}
 
@@ -736,7 +760,7 @@ impl PowerManager {
                 unlock(0x00000004);
                 (*PM_REGS).cpusel.modify_no_read(
                     cpusel,
-                    CpuClockSelect::CPUDIV::CLEAR + CpuClockSelect::CPUSEL::CLEAR,
+                    CpuClockSelect::CPUDIV::CLEAR, 
                 );
                 while (*PM_REGS).sr.matches_all(InterruptOrStatus::CKRDY::CLEAR) {}
 
