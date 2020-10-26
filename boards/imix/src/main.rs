@@ -431,7 +431,7 @@ pub unsafe fn reset_handler() {
     //clock_manager.register(&sam4l::usart::USART3);
     clock_manager.register(&sam4l::adc::ADC0);
     clock_manager.register(&sam4l::i2c::I2C2);
-    //clock_manager.register(&sam4l::spi::SPI);
+    clock_manager.register(&sam4l::spi::SPI);
     //clock_manager.register(&sam4l::gpio::PA[08]); //spi's gpio
     clock_manager.register(&sam4l::gpio::PC[31]); //D2
     clock_manager.register(&sam4l::flashcalw::FLASH_CONTROLLER);

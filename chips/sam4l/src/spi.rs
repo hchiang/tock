@@ -12,7 +12,7 @@ use crate::dma::DMAPeripheral;
 use crate::pm;
 use core::cell::Cell;
 use core::cmp;
-use kernel::common::cells::OptionalCell;
+use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::peripherals::{PeripheralManagement, PeripheralManager};
 use kernel::common::registers::{self, register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
@@ -22,6 +22,7 @@ use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::SpiMasterClient;
 use kernel::hil::spi::SpiSlaveClient;
 use kernel::{ClockInterface, ReturnCode};
+use kernel::hil::clock_pm::{ClockClient, ClockManager, ClientIndex};
 
 #[repr(C)]
 pub struct SpiRegisters {
@@ -192,6 +193,13 @@ pub struct SpiHw {
     // Slave client is distinct from master client
     slave_client: OptionalCell<&'static dyn SpiSlaveClient>,
     role: Cell<SpiRole>,
+
+    baud_rate: Cell<u32>,
+    callback_write_buffer: TakeCell<'static, [u8]>,
+    callback_read_buffer: TakeCell<'static, [u8]>,
+    callback_len: Cell<usize>,
+    clock_manager: OptionalCell<&'static dyn ClockManager>,
+    client_index: OptionalCell<&'static ClientIndex>,
 }
 
 const SPI_BASE: StaticRef<SpiRegisters> =
@@ -235,6 +243,13 @@ impl SpiHw {
 
             slave_client: OptionalCell::empty(),
             role: Cell::new(SpiRole::SpiMaster),
+
+            baud_rate: Cell::new(0),
+            callback_write_buffer: TakeCell::empty(),
+            callback_read_buffer: TakeCell::empty(),
+            callback_len: Cell::new(0),
+            clock_manager: OptionalCell::empty(),
+            client_index: OptionalCell::empty(),
         }
     }
 
@@ -285,6 +300,12 @@ impl SpiHw {
         if self.role.get() == SpiRole::SpiSlave {
             spi.registers.idr.write(InterruptFlags::NSSR::SET); // Disable NSSR
         }
+
+        self.client_index.map( |client_index|
+            self.clock_manager.map( |clock_manager|
+                 clock_manager.disable_clock(client_index)
+            )
+        );
     }
 
     /// Sets the approximate baud rate for the active peripheral,
@@ -297,14 +318,30 @@ impl SpiHw {
     ///
     /// The lowest available baud rate is 188235 baud. If the
     /// requested rate is lower, 188235 baud will be selected.
-    pub fn set_baud_rate(&self, rate: u32) -> u32 {
+    pub fn set_baud_rate(&self, rate: u32, frequency: u32) -> u32 {
         // Main clock frequency
         let mut real_rate = rate;
-        let clock = pm::get_system_frequency();
+        let clock; 
+        if frequency == 0 {
+            clock = pm::get_system_frequency();
+        } else {
+            clock = frequency;
+        }
 
         if real_rate < 188235 {
             real_rate = 188235;
         }
+
+        if real_rate != self.baud_rate.get() {
+            self.baud_rate.set(real_rate);
+            self.client_index.map( |client_index| 
+                self.clock_manager.map( |clock_manager| {
+                    clock_manager.set_min_frequency(client_index, real_rate);
+                    clock_manager.set_max_frequency(client_index, real_rate*255);
+                })
+            );
+        }
+
         if real_rate > clock {
             real_rate = clock;
         }
@@ -575,11 +612,20 @@ impl spi::SpiMaster for SpiHw {
             return ReturnCode::EBUSY;
         }
 
-        self.read_write_bytes(Some(write_buffer), read_buffer, len)
+        self.callback_write_buffer.put(Some(write_buffer));
+        self.callback_read_buffer.put(read_buffer);
+        self.callback_len.set(len);
+
+        self.client_index.map( |client_index|
+            self.clock_manager.map( |clock_manager|
+                clock_manager.enable_clock(client_index)
+            )
+        );
+        return ReturnCode::SUCCESS;
     }
 
     fn set_rate(&self, rate: u32) -> u32 {
-        self.set_baud_rate(rate)
+        self.set_baud_rate(rate, 0)
     }
 
     fn get_rate(&self) -> u32 {
@@ -726,4 +772,21 @@ impl DMAClient for SpiHw {
             }
         }
     }
+}
+
+impl ClockClient for SpiHw {
+    fn setup_client(&self, clock_manager: &'static dyn ClockManager, client_index: &'static ClientIndex) {
+        self.clock_manager.set(clock_manager);
+        self.client_index.set(client_index);
+        clock_manager.set_min_frequency(client_index, self.baud_rate.get());
+    }
+    fn configure_clock(&self, frequency: u32) {
+        self.set_baud_rate(self.baud_rate.get(), frequency);
+    }
+    fn clock_enabled(&self) {
+        let write_buf = self.callback_write_buffer.take();
+        let read_buf = self.callback_read_buffer.take();
+        self.read_write_bytes(write_buf, read_buf, self.callback_len.get());
+    }
+    fn clock_disabled(&self) {}
 }
