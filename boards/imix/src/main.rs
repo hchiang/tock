@@ -430,7 +430,7 @@ pub unsafe fn reset_handler() {
     let clock_manager = ClockManagerComponent::new(&sam4l::clock_pm::ImixCM).finalize(());
     //clock_manager.register(&sam4l::usart::USART3);
     clock_manager.register(&sam4l::adc::ADC0);
-    //clock_manager.register(&sam4l::i2c::I2C2);
+    clock_manager.register(&sam4l::i2c::I2C2);
     //clock_manager.register(&sam4l::spi::SPI);
     //clock_manager.register(&sam4l::gpio::PA[08]); //spi's gpio
     clock_manager.register(&sam4l::gpio::PC[31]); //D2
