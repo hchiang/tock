@@ -434,7 +434,7 @@ pub unsafe fn reset_handler() {
     //clock_manager.register(&sam4l::spi::SPI);
     //clock_manager.register(&sam4l::gpio::PA[08]); //spi's gpio
     //clock_manager.register(&sam4l::gpio::PC[31]); //D2
-    //clock_manager.register(&sam4l::flashcalw::FLASH_CONTROLLER);
+    clock_manager.register(&sam4l::flashcalw::FLASH_CONTROLLER);
 
     let imix = Imix {
         //pconsole,
