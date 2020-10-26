@@ -16,6 +16,7 @@ use crate::platform::{Chip, Platform};
 use crate::process::{self, Task};
 use crate::returncode::ReturnCode;
 use crate::syscall::{ContextSwitchReason, Syscall};
+use crate::hil::clock_pm::ChangeClock;
 
 /// The time a process is permitted to run before being pre-empted
 const KERNEL_TICK_DURATION_US: u32 = 10000;
@@ -207,6 +208,7 @@ impl Kernel {
         chip: &C,
         ipc: Option<&ipc::IPC>,
         _capability: &dyn capabilities::MainLoopCapability,
+        clock_driver: &'static dyn ChangeClock,
     ) {
         loop {
             unsafe {
@@ -215,13 +217,20 @@ impl Kernel {
 
                 for p in self.processes.iter() {
                     p.map(|process| {
-                        self.do_process(platform, chip, process, ipc);
+                        self.do_process(platform, chip, process, ipc, clock_driver);
                     });
                     if chip.has_pending_interrupts()
                         || DynamicDeferredCall::global_instance_calls_pending().unwrap_or(false)
                     {
                         break;
                     }
+                }
+
+                if !chip.has_pending_interrupts()
+                    && !DynamicDeferredCall::global_instance_calls_pending().unwrap_or(false)
+                    && self.processes_blocked() 
+                {
+                    clock_driver.change_clock();
                 }
 
                 chip.atomic(|| {
@@ -242,6 +251,7 @@ impl Kernel {
         chip: &C,
         process: &dyn process::ProcessType,
         ipc: Option<&crate::ipc::IPC>,
+        clock_driver: &'static dyn ChangeClock,
     ) {
         let appid = process.appid();
         let systick = chip.systick();
@@ -363,6 +373,10 @@ impl Kernel {
                         }
                         Some(ContextSwitchReason::TimesliceExpired) => {
                             // break to handle other processes.
+                            if !process.get_compute_mode() {
+                                process.set_compute_mode(true);
+                                clock_driver.set_compute_mode(true);
+                            }
                             break;
                         }
                         Some(ContextSwitchReason::Interrupted) => {
@@ -382,7 +396,13 @@ impl Kernel {
                     // If the process is yielded it might be waiting for a
                     // callback. If there is a task scheduled for this process
                     // go ahead and set the process to execute it.
-                    None => break,
+                    None => {
+                        if process.get_compute_mode() {
+                            process.set_compute_mode(false);
+                            clock_driver.set_compute_mode(false);
+                        }
+                        break;
+                    }, 
                     Some(cb) => match cb {
                         Task::FunctionCall(ccb) => {
                             process.set_process_function(ccb);
@@ -400,8 +420,8 @@ impl Kernel {
                                 },
                             );
                         }
-                    },
-                },
+                    }
+                }
                 process::State::Fault => {
                     // We should never be scheduling a process in fault.
                     panic!("Attempted to schedule a faulty process");
