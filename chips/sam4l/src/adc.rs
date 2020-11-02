@@ -812,7 +812,10 @@ impl hil::adc::Adc for Adc {
             self.disable();
 
             unsafe {
-                pm::PM.change_system_clock(pm::SystemClockSource::RC80M);
+                pm::PM.change_system_clock(pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+                    frequency: pm::OscillatorFrequency::Frequency16MHz,
+                    startup_mode: pm::OscillatorStartup::FastStart,
+                });
             }
 
             // stop DMA transfer if going. This should safely return a None if
