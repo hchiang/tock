@@ -246,7 +246,7 @@ impl ClockManagement<'a> {
                 } 
             }
 
-            self.configs.change_system_clock(clock);
+            //self.configs.change_system_clock(clock);
             if current_freq > system_freq {
                 for i in 0..self.num_clients.get() { 
                     if self.clients[i].get_running() {
