@@ -294,7 +294,10 @@ impl SpiHw {
                 // For this app, we are waiting on interrupt from radio
                 pm::PM.change_system_clock(pm::SystemClockSource::RC1M);
             } else {
-                pm::PM.change_system_clock(pm::SystemClockSource::RC80M);
+                pm::PM.change_system_clock(pm::SystemClockSource::PllExternalOscillatorAt48MHz {
+                    frequency: pm::OscillatorFrequency::Frequency16MHz,
+                    startup_mode: pm::OscillatorStartup::FastStart,
+                });
             }
         } 
 
