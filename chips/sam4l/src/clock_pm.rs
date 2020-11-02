@@ -9,8 +9,8 @@ const RCFAST8M: u32     = 0x008;
 const RCFAST12M: u32    = 0x010; 
 const EXTOSC: u32       = 0x020; 
 const RC80M: u32        = 0x040;
-const DFLL: u32         = 0x080; 
-const PLL: u32          = 0x100; 
+const PLL: u32          = 0x080; 
+const DFLL: u32         = 0x100; 
 const ALL_CLOCKS: u32   = 0x1ff; 
 
 pub struct ImixClockManager {}
@@ -39,10 +39,9 @@ impl ImixClockManager {
                         startup_mode: pm::OscillatorStartup::FastStart},
             RC80M => pm::SystemClockSource::RC80M,
             DFLL => pm::SystemClockSource::DfllRc32kAt48MHz,
-            PLL => pm::SystemClockSource::PllExternalOscillatorAt48MHz{
+            _ => pm::SystemClockSource::PllExternalOscillatorAt48MHz{
                         frequency: pm::OscillatorFrequency::Frequency16MHz,
                         startup_mode: pm::OscillatorStartup::FastStart},
-            _ => pm::SystemClockSource::RC80M,
         }
     }
 }
@@ -62,7 +61,7 @@ impl ClockConfigs for ImixClockManager {
     }
 
     fn get_compute(&self) -> u32 {
-        RC80M
+        PLL 
     }
 
     fn get_noncompute(&self) -> u32 {
